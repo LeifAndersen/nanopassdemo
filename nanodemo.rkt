@@ -88,6 +88,24 @@
                (let ([x e])
                  le))))
 
+(define-pass parse : * (e) -> Lsrc ()
+  (Expr : * (e) -> Expr ()
+        (match e
+          [`(= ,(app Expr e1) ,(app Expr e2))
+           `(= ,e1 ,e2)]
+          [`(+ ,(app Expr e1) ,(app Expr e2))
+           `(+ ,e1 ,e2)]
+          [`(if ,(app Expr e1) ,(app Expr e2) ,(app Expr e3))
+           `(if ,e1 ,e2 ,e3)]
+          [`(when ,(app Expr e1) ,(app Expr e2))
+           `(when ,e1 ,e2)]
+          [`(λ (,x) ,(app Expr e1))
+           `(λ (,x) ,e1)]
+          [`(,(app Expr e1) ,(app Expr e2))
+           `(,e1 ,e2)]
+          [else e]))
+  (Expr e))
+
 (define-pass desugar-when : Lsrc (e) -> L1 ()
   (Expr : Expr (e) -> Expr ()
         [(when ,e1 ,e2)
@@ -360,19 +378,15 @@
         @~a{__env_get(@x, @nat)}])
   (Let-Expr : Let-Expr (e) -> * ()
             [(let ([,x (closure-func ,x*)]) ,le)
-             @~a{
-              Lambda @x = @|x*|.c.l;
+             @~a{Lambda @x = @|x*|.c.l;
               @Let-Expr[le]}]
             [(let ([,x (closure-env ,x*)]) ,le)
-             @~a{
-              Racket_Object* @x = @|x*|.c.e;
+             @~a{Racket_Object* @x = @|x*|.c.e;
               @Let-Expr[le]}]
             [(let ([,x ,e]) ,le)
-             @~a{
-              Racket_Object @x = (@(Expr e));
+             @~a{Racket_Object @x = (@(Expr e));
               @Let-Expr[le]}]
-            [else
-             @~a{return @(Expr e);}]))
+            [else @~a{return @(Expr e);}]))
 
 (define compile
   (compose generate-c
@@ -382,16 +396,19 @@
            make-closures
            identify-free-variables
            delay-if
-           desugar-when))
+           desugar-when
+           parse))
 
 (define x
   (compile
-   (with-output-language (Lsrc Expr)
-     `(((λ (x)
-         (λ (y)
-           (if (= 6 (+ x y))
-               x
-               y))) 4) 2))))
+   #;`(((λ (x)
+          (λ (x)
+            x)) 1) 2)
+   '(((λ (x)
+        (λ (y)
+          (if (= 6 (+ x y))
+              x
+              y))) 4) 2)))
 
 (displayln x)
 (with-output-to-file "temp.c"
