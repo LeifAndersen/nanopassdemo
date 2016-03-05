@@ -224,8 +224,93 @@
             `(program ([,x (,x1 ,x2) ,e] ...)
                       ,e*)]))
 
+(define runtime
+  @~a{#include <stdio.h>
+ #include <stdarg.h>
+ #include <stdlib.h>
+ 
+ struct Int;
+ struct Bool;
+ struct Closure;
+ union Racket_Object;
+ 
+ typedef union Racket_Object (*Lambda)();
+ enum Tag {INT, BOOL, CLOSURE};
+ 
+ typedef struct Int {
+  enum Tag t;
+  int v;
+  } Int;
+   
+ typedef struct Bool {
+  enum Tag t;
+  unsigned int v;
+  } Bool;
+   
+ typedef struct Closure {
+  enum Tag t;
+  Lambda l;
+  union Racket_Object * e;
+  } Closure;
+   
+ typedef union Racket_Object {
+  enum Tag t;
+  Int i;
+  Bool b;
+  Closure c;
+  } Racket_Object;
+   
+ Racket_Object __make_int(int i) {
+  Racket_Object o;
+  o.t = INT;
+  o.i.v = i;
+  return o;
+ }
+ 
+ Racket_Object __make_bool(int b) {
+  Racket_Object o;
+  o.t = BOOL;
+  o.b.v = b;
+  return o;
+ }
+ 
+ Racket_Object __make_closure(Lambda name, int argc, ...) {
+  /* Allocate space for env */
+  Racket_Object* env = malloc(sizeof(Racket_Object) * argc);
+  
+  /* Fill env */
+  va_list lp;
+  va_start(lp, argc);
+  for(int i = 0; i < argc; i++) {
+   env[i] = va_arg(lp, Racket_Object);
+  }
+  
+  /* Return closure */
+  Racket_Object o;
+  o.t = CLOSURE;
+  o.c.l = name;
+  o.c.e = env;
+  return o;
+ }
+ 
+ Racket_Object __env_get(Racket_Object *env, unsigned int id) {
+  return env[id];
+ }
+ 
+ Racket_Object  __prim_plus(Racket_Object a, Racket_Object b) {
+  return __make_int(a.i.v + b.i.v);
+ }
+ 
+ Racket_Object __prim_equal(Racket_Object a, Racket_Object b) {
+  return __make_bool(a.i.v == b.i.v);
+ }
+ 
+ Racket_Object __prim_if(Racket_Object a, Racket_Object b, Racket_Object c) {
+  return a.b.v ? b : c;
+ }})
+
 (define-pass generate-c : L6 (e) -> * ()
-  (definitions
+ (definitions
     (define (c s)
       (list->string
        (cons #\_
@@ -243,90 +328,7 @@
   (Program : Program (e) -> * ()
            [(program ([,x (,x1 ,x2) ,le*] ...)
                      ,le)
-            @~a{#include <stdio.h>
-             #include <stdarg.h>
-             #include <stdlib.h>
-
-             struct Int;
-             struct Bool;
-             struct Closure;
-             union Racket_Object;
-
-             typedef union Racket_Object (*Lambda)();
-             enum Tag {INT, BOOL, CLOSURE};
-
-             typedef struct Int {
-              enum Tag t;
-              int v;
-             } Int;
-
-             typedef struct Bool {
-              enum Tag t;
-              unsigned int v;
-             } Bool;
-
-             typedef struct Closure {
-              enum Tag t;
-              Lambda l;
-              union Racket_Object * e;
-             } Closure;
-
-             typedef union Racket_Object {
-              enum Tag t;
-              Int i;
-              Bool b;
-              Closure c;
-             } Racket_Object;
-
-             Racket_Object __make_int(int i) {
-              Racket_Object o;
-              o.t = INT;
-              o.i.v = i;
-              return o;
-             }
-
-             Racket_Object __make_bool(int b) {
-              Racket_Object o;
-              o.t = BOOL;
-              o.b.v = b;
-              return o;
-             }
-
-             Racket_Object __make_closure(Lambda name, int argc, ...) {
-              /* Allocate space for env */
-              Racket_Object* env = malloc(sizeof(Racket_Object) * argc);
-
-              /* Fill env */
-              va_list lp;
-              va_start(lp, argc);
-              for(int i = 0; i < argc; i++) {
-               env[i] = va_arg(lp, Racket_Object);
-              }
-
-              /* Return closure */
-              Racket_Object o;
-              o.t = CLOSURE;
-              o.c.l = name;
-              o.c.e = env;
-              return o;
-             }
-
-             Racket_Object __env_get(Racket_Object *env, unsigned int id) {
-              return env[id];
-             }
-             
-             Racket_Object  __prim_plus(Racket_Object a, Racket_Object b) {
-              return __make_int(a.i.v + b.i.v);
-             }
-
-             Racket_Object __prim_equal(Racket_Object a, Racket_Object b) {
-              return __make_bool(a.i.v == b.i.v);
-             }
-             
-             Racket_Object __prim_if(Racket_Object a, Racket_Object b, Racket_Object c) {
-              return a.b.v ? b : c;
-             }
-
+            @~a{@runtime
              @(apply ~a (for/list ([x (in-list x)]
                                    [x1 (in-list x1)]
                                    [x2 (in-list x2)])
