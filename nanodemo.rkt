@@ -6,9 +6,7 @@
    (boolean (b))
    (symbol (x)))
   (Expr (e)
-        n
-        x
-        b
+        n x b
         (= e1 e2)
         (+ e1 e2)
         (if e1 e2 e3)
@@ -228,13 +226,20 @@
 
 (define-pass generate-c : L6 (e) -> * ()
   (definitions
+    (define (c s)
+      (list->string
+       (cons #\_
+             (for/list ([i (in-string (symbol->string s))])
+               (cond
+                 [(or (char-alphabetic? i)
+                      (char-numeric? i))
+                  i]
+                 [else #\_])))))
     (define (build-func-decl name x1 x2)
-      @~a{Racket_Object @name(Racket_Object @x1, Racket_Object* @x2);})
+      @~a{Racket_Object @c[name](Racket_Object @c[x1], Racket_Object* @c[x2]);})
     (define (build-func name x1 x2 body)
-      @~a{Racket_Object @name(Racket_Object @x1, Racket_Object* @x2) {
-  @(Let-Expr body)
- }
- }))
+      @~a{Racket_Object @c[name](Racket_Object @c[x1], Racket_Object* @c[x2]) {
+  @(Let-Expr body)}}))
   (Program : Program (e) -> * ()
            [(program ([,x (,x1 ,x2) ,le*] ...)
                      ,le)
@@ -248,7 +253,6 @@
              union Racket_Object;
 
              typedef union Racket_Object (*Lambda)();
-
              enum Tag {INT, BOOL, CLOSURE};
 
              typedef struct Int {
@@ -323,17 +327,15 @@
               return a.b.v ? b : c;
              }
 
-             @(apply ~a
-                     (for/list ([x (in-list x)]
-                                [x1 (in-list x1)]
-                                [x2 (in-list x2)])
-                       (build-func-decl x x1 x2)))
-             @(apply ~a
-                     (for/list ([x (in-list x)]
-                                [x1 (in-list x1)]
-                                [x2 (in-list x2)]
-                                [le* (in-list le*)])
-                       (build-func x x1 x2 le*)))
+             @(apply ~a (for/list ([x (in-list x)]
+                                   [x1 (in-list x1)]
+                                   [x2 (in-list x2)])
+                          (build-func-decl x x1 x2)))
+             @(apply ~a (for/list ([x (in-list x)]
+                                   [x1 (in-list x1)]
+                                   [x2 (in-list x2)]
+                                   [le* (in-list le*)])
+                          (build-func x x1 x2 le*)))
 
              Racket_Object __racket_main() {
               @Let-Expr[le]
@@ -355,36 +357,35 @@
         [,n @~a{__make_int(@n)}]
         [,b @~a{__make_bool(@(if b "1" "0"))}]
         [(+ ,x1 ,x2)
-         @~a{__prim_plus(@x1, @x2)}]
+         @~a{__prim_plus(@c[x1], @c[x2])}]
         [(= ,x1 ,x2)
-         @~a{__prim_equal(@x1, @x2)}]
+         @~a{__prim_equal(@c[x1], @c[x2])}]
         [(if ,x1 ,x2 ,x3)
-         @~a{__prim_if(@x1,@x2,@x3)}]
+         @~a{__prim_if(@c[x1],@c[x2],@c[x3])}]
         [(,x1 ,x2 ,x3)
-         @~a{@x1(@x2, @x3)}]
+         @~a{@c[x1](@c[x2], @c[x3])}]
         [(closure-env ,x)
-         @~a{@|x|.c.e}]
+         @~a{@c[x].c.e}]
         [(closure-func ,x)
-         @~a{@|x|.c.l}]
+         @~a{@c[x].c.l}]
         [(make-closure ,x (,v ...))
-         @~a{__make_closure(@x,
+         @~a{__make_closure(@c[x],
                             @(length v)
-                            @(apply ~a
-                                    (for/list ([i (in-list v)])
-                                      @~a{, @Var[i]})))}])
+                            @(apply ~a (for/list ([i (in-list v)])
+                                         @~a{, @Var[i]})))}])
   (Var : Var (e) -> * ()
-       [,x (symbol->string x)]
+       [,x @c[x]]
        [(env-get ,x ,nat)
-        @~a{__env_get(@x, @nat)}])
+        @~a{__env_get(@c[x], @nat)}])
   (Let-Expr : Let-Expr (e) -> * ()
             [(let ([,x (closure-func ,x*)]) ,le)
-             @~a{Lambda @x = @|x*|.c.l;
+             @~a{Lambda @c[x] = @c[x*].c.l;
               @Let-Expr[le]}]
             [(let ([,x (closure-env ,x*)]) ,le)
-             @~a{Racket_Object* @x = @|x*|.c.e;
+             @~a{Racket_Object* @c[x] = @c[x*].c.e;
               @Let-Expr[le]}]
             [(let ([,x ,e]) ,le)
-             @~a{Racket_Object @x = (@(Expr e));
+             @~a{Racket_Object @c[x] = @(Expr e);
               @Let-Expr[le]}]
             [else @~a{return @(Expr e);}]))
 
