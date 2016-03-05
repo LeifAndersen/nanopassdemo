@@ -9,6 +9,7 @@
         n
         x
         b
+        (= e1 e2)
         (+ e1 e2)
         (if e1 e2 e3)
         (when e1 e2)
@@ -60,9 +61,11 @@
   (extends L4)
   (Expr (e)
         (- (+ e1 e2)
+           (= e1 e2)
            (e1 e2 e3)
            (if e1 e2 e3))
         (+ (+ x1 x2)
+           (= x1 x2)
            (x1 x2 x3)
            (if x1 e2 e3))))
 
@@ -80,6 +83,7 @@
         (+ (if x1 le2 le3)))
   (Let-Expr (le)
             (+ e
+               (if x1 le2 le3)
                (let ([x e])
                  le))))
 
@@ -96,7 +100,7 @@
                  (set-union a1 a2))]
         [(if ,[e1 a1] ,[e2 a2] ,[e3 a3])
          (values `(if ,e1 ,e2, e3)
-                 (set-union e1 e2 e3))]
+                 (set-union a1 a2 a3))]
         [(λ (,x) ,[e1 a1])
          (define a* (set-remove a1 x))
          (values `(λ (,x) (free (,a* ...) ,e1))
@@ -109,13 +113,13 @@
 
 (define-pass make-closures : L2 (e) -> L3 ()
   (Expr : Expr (e [env #f] [fv '()]) -> Expr ()
-        [(,e1 ,e2)
+        [(,[e1] ,[e2])
          (define clo-name (gensym 'clo))
          `(let ([,clo-name ,e1])
             ((closure-func ,clo-name) ,e2 (closure-env ,clo-name)))]
         [,x
          (if (dict-has-key? fv x)
-             `(env-get ,env ,(dict-ref x))
+             `(env-get ,env ,(dict-ref fv x))
              x)]
         [(λ (,x) (free (,x* ...) ,e))
          (define lambda-name (gensym 'func))
@@ -124,7 +128,7 @@
            (Expr e env-name
                  (for/list ([i (in-list x*)]
                             [j (in-range (length x*))])
-                   (list i j))))
+                   (cons i j))))
          `(closure (,lambda-name (,x ,env-name) ,e*) (,x* ...))]))
 
 (define-pass raise-closures : L3 (e) -> L4 ()
@@ -155,49 +159,49 @@
               (let ([,x3 ,e3])
                 (,x1 ,x2 ,x3))))]
         [(+ ,[e1] ,[e2])
-         (define x1 (gensym '+))
-         (define x2 (gensym '+))
+         (define x1 (gensym 'plus))
+         (define x2 (gensym 'plus))
          `(let ([,x1 ,e1])
             (let ([,x2 ,e2])
-              (+ ,x1 ,x2)))]
+                (+ ,x1 ,x2)))]
+        [(= ,[e1] ,[e2])
+         (define x1 (gensym 'eq))
+         (define x2 (gensym 'eq))
+         `(let ([,x1 ,e1])
+            (let ([,x2 ,e2])
+              (= ,x1 ,x2)))]
         [(if ,[e1] ,[e2] ,[e3])
          (define x1 (gensym 'if))
          `(let ([,x1 ,e1])
             (if ,x1 ,e2 ,e3))]))
 
 (define-pass raise-lets : L5 (e) -> L6 ()
-  (Expr : Expr (e) -> Expr ())
+  (Expr : Expr (e) -> Expr ()
+        [(if ,x1 ,e2 ,e3)
+         `(if ,x1 ,(Let-Expr e2 #f #f) ,(Let-Expr e3 #f #f))])
   (Let-Expr : Expr (e [var #f] [next-expr #f]) -> Let-Expr ()
-        [,n (if var
-                `(let ([,var ,n])
-                   ,next-expr)
-                n)]
-        [,b (if var
-                `(let ([,var ,b])
-                   ,next-expr)
-                b)]
-        [(let ([,x ,e])
-           ,e*)
-         (if var
-             (Expr e x (Expr e* var next-expr))
-             (Expr e x e*))]
-        [else
-         (if var
-             `(let ([,var ,(Expr e)])
-                ,next-expr)
-             (Expr e))])
+            [(let ([,x ,e])
+               ,e*)
+             (Let-Expr e x (Let-Expr e* var next-expr))]
+            [else
+             (if var
+                 `(let ([,var ,(Expr e)])
+                    ,next-expr)
+                 (Expr e))])
   (Program : Program (p) -> Program ()
-           [(program ([,x (,x1 ,x2) ,[e #f #f -> e]] ...)
-                     ,[e* #f #f -> e*])
+           [(program ([,x (,x1 ,x2) ,[Let-Expr : e #f #f -> e]] ...)
+                     ,[Let-Expr : e* #f #f -> e*])
             `(program ([,x (,x1 ,x2) ,e] ...)
                       ,e*)]))
 
 (define-pass generate-c : L6 (e) -> * ()
   (definitions
+    (define (build-func-decl name x1 x2)
+      @~a{
+ Racket_Object @name(Racket_Object @x1, Racket_Object* @x2);})
     (define (build-func name x1 x2 body)
       @~a{
- Racket_Object @name(Racket_Object @x1,
-                     Racket_Object @x2) {
+ Racket_Object @name(Racket_Object @x1, Racket_Object* @x2) {
   @(Let-Expr body)
  }
  }))
@@ -272,15 +276,28 @@
               o.c.e = env;
               return o;
              }
+
+             Racket_Object __env_get(Racket_Object *env, unsigned int id) {
+              return env[id];
+             }
              
              Racket_Object  __prim_plus(Racket_Object a, Racket_Object b) {
               return __make_int(a.i.v + b.i.v);
              }
 
+             Racket_Object __prim_equal(Racket_Object a, Racket_Object b) {
+              return __make_bool(a.i.v == b.i.v);
+             }
+             
              int __prim_if(Racket_Object a) {
               return a.b.v;
              }
 
+             @(apply ~a
+                     (for/list ([x (in-list x)]
+                                [x1 (in-list x1)]
+                                [x2 (in-list x2)])
+                       (build-func-decl x x1 x2)))
              @(apply ~a
                      (for/list ([x (in-list x)]
                                 [x1 (in-list x1)]
@@ -310,6 +327,8 @@
         [,b @~a{__make_bool(@(if b "1" "0"))}]
         [(+ ,x1 ,x2)
          @~a{__prim_plus(@x1, @x2)}]
+        [(= ,x1 ,x2)
+         @~a{__prim_equal(@x1, @x2)}]
         [(if ,x1 ,le2 ,le3)
          @~a{if(__prim_if(@x1)) {
            @Let-Expr[le2]
@@ -319,9 +338,9 @@
         [(,x1 ,x2 ,x3)
          @~a{@x1(@x2, @x3)}]
         [(closure-env ,x)
-         @~a{((Closure*)@x).e}]
+         @~a{@|x|.c.e}]
         [(closure-func ,x)
-         @~a{((Closure*)@x).l}]
+         @~a{@|x|.c.l}]
         [(env-get ,x ,nat)
          @~a{__env_get(@x, @nat)}]
         [(make-closure ,x (,x* ...))
@@ -331,9 +350,17 @@
                                     (for/list ([i (in-list x*)])
                                       @~a{, @i})))}])
   (Let-Expr : Let-Expr (e) -> * ()
+            [(let ([,x (closure-func ,x*)]) ,le)
+             @~a{
+              Lambda @x = @|x*|.c.l;
+              @Let-Expr[le]}]
+            [(let ([,x (closure-env ,x*)]) ,le)
+             @~a{
+              Racket_Object* @x = @|x*|.c.e;
+              @Let-Expr[le]}]
             [(let ([,x ,e]) ,le)
              @~a{
-              struct Racket_Object @x = (@(Expr e));
+              Racket_Object @x = (@(Expr e));
               @Let-Expr[le]}]
             [else
              @~a{return @(Expr e);}]))
@@ -350,7 +377,11 @@
 (define x
   (compile
    (with-output-language (Lsrc Expr)
-     `(λ (x) 5))))
+     `(((λ (x)
+         (λ (y)
+           (if (= 6 (+ x y))
+               12
+               86))) 4) 2))))
 
 (displayln x)
 (with-output-to-file "temp.c"
