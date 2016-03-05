@@ -31,11 +31,13 @@
 
 (define-language L3
   (extends L2)
+  (terminals
+   (+ (exact-nonnegative-integer (nat))))
   (Expr (e)
         (- (λ (x) fe)
            (e1 e2))
         (+ (closure (x (x1 x2) e) (x* ...))
-           (env-get x1 x2)
+           (env-get x1 nat)
            (closure-func x)
            (closure-env x)
            (let ([x e])
@@ -112,12 +114,18 @@
          `(let ([,clo-name ,e1])
             ((closure-func ,clo-name) ,e2 (closure-env ,clo-name)))]
         [,x
-         (if (set-member? fv x)
-             `(env-get ,env ,x)
+         (if (dict-has-key? fv x)
+             `(env-get ,env ,(dict-ref x))
              x)]
-        [(λ (,x) (free (,x* ...) ,[e]))
+        [(λ (,x) (free (,x* ...) ,e))
          (define lambda-name (gensym 'func))
-         `(closure (,lambda-name (,x env) ,e) (,x* ...))]))
+         (define env-name (gensym 'env))
+         (define e*
+           (Expr e env-name
+                 (for/list ([i (in-list x*)]
+                            [j (in-range (length x*))])
+                   (list i j))))
+         `(closure (,lambda-name (,x ,env-name) ,e*) (,x* ...))]))
 
 (define-pass raise-closures : L3 (e) -> L4 ()
   (definitions
@@ -187,9 +195,9 @@
 (define-pass generate-c : L6 (e) -> * ()
   (definitions
     (define (build-func name x1 x2 body)
-      @string-append{
- Scheme_Object * @symbol->string[name](Scheme_Object * @symbol->string[x1],
-                                       Scheme_Object * @symbol->string[x2]) {
+      @~a{
+ Racket_Object @name(Racket_Object @x1,
+                     Racket_Object @x2) {
   @(Let-Expr body)
  }
  }))
@@ -197,25 +205,32 @@
            [(program ([,x (,x1 ,x2) ,le*] ...)
                      ,le)
             @~a{#include <stdio.h>
-                           
-             enum Tag {INT, BOOL, CLOSURE}
+             #include <stdarg.h>
+             #include <stdlib.h>
 
-             typedef Racket_Object (*Lambda)();
+             struct Int;
+             struct Bool;
+             struct Closure;
+             union Racket_Object;
+
+             typedef union Racket_Object (*Lambda)();
+
+             enum Tag {INT, BOOL, CLOSURE};
 
              typedef struct Int {
               enum Tag t;
-              int value;
+              int v;
              } Int;
 
              typedef struct Bool {
               enum Tag t;
-              unsigned int value;
+              unsigned int v;
              } Bool;
 
              typedef struct Closure {
               enum Tag t;
               Lambda l;
-              void* e;
+              union Racket_Object * e;
              } Closure;
 
              typedef union Racket_Object {
@@ -225,30 +240,45 @@
               Closure c;
              } Racket_Object;
 
-             Racket_Object  __prim_plus(Racket_Object a, Racket b) {
-              return __make_int(((Int) a).value + ((Int) b).value);
-             }
-
-             int __prim_if(Racket_Object a) {
-              return ((Bool) a).value;
-             }
-
              Racket_Object __make_int(int i) {
               Racket_Object o;
               o.t = INT;
-              o.value = i;
+              o.i.v = i;
               return o;
              }
 
              Racket_Object __make_bool(int b) {
-              Racket_object o;
+              Racket_Object o;
               o.t = BOOL;
-              o.value = b;
+              o.b.v = b;
               return o;
              }
 
-             Racket_Object __make_closure(TODO) {
-              return "TODO";
+             Racket_Object __make_closure(Lambda name, int argc, ...) {
+              /* Allocate space for env */
+              Racket_Object* env = malloc(sizeof(Racket_Object) * argc);
+
+              /* Fill env */
+              va_list lp;
+              va_start(lp, argc);
+              for(int i = 0; i < argc; i++) {
+               env[i] = va_arg(lp, Racket_Object);
+              }
+
+              /* Return closure */
+              Racket_Object o;
+              o.t = CLOSURE;
+              o.c.l = name;
+              o.c.e = env;
+              return o;
+             }
+             
+             Racket_Object  __prim_plus(Racket_Object a, Racket_Object b) {
+              return __make_int(a.i.v + b.i.v);
+             }
+
+             int __prim_if(Racket_Object a) {
+              return a.b.v;
              }
 
              @(apply ~a
@@ -258,12 +288,19 @@
                                 [le* (in-list le*)])
                        (build-func x x1 x2 le*)))
 
-             Scheme_Object Racket_main() {
+             Racket_Object __racket_main() {
               @Let-Expr[le]
              }
 
              int main () {
-              printf("ans = %d", Racket_main());
+              Racket_Object ret = __racket_main();
+              if(ret.t == CLOSURE) {
+               printf("ans = #<procedure>\n");
+              } else if(ret.t == INT) {
+               printf("ans = %d\n", ret.i.v);
+              } else {
+               printf("ans = %s", ret.b.v ? "#t" : "#f");
+              }
               return 0;
              }
             }])
@@ -276,25 +313,27 @@
         [(if ,x1 ,le2 ,le3)
          @~a{if(__prim_if(@x1)) {
            @Let-Expr[le2]
-           } else {
+          } else {
            @Let-Expr[le3]
-           }}]
+          }}]
         [(,x1 ,x2 ,x3)
          @~a{@x1(@x2, @x3)}]
         [(closure-env ,x)
-         @~a{@|x|.env}]
+         @~a{((Closure*)@x).e}]
         [(closure-func ,x)
-         @~a{@|x|.func}]
-        [(env-get ,x1 ,x2)
-         @~a{TODO}]
+         @~a{((Closure*)@x).l}]
+        [(env-get ,x ,nat)
+         @~a{__env_get(@x, @nat)}]
         [(make-closure ,x (,x* ...))
-         @~a{__make_closure(@x, @(apply ~a
-                                        (for/list ([i (in-list x*)])
-                                          @~a{@i,})))}])
+         @~a{__make_closure(@x,
+                            @(length x*)
+                            @(apply ~a
+                                    (for/list ([i (in-list x*)])
+                                      @~a{, @i})))}])
   (Let-Expr : Let-Expr (e) -> * ()
             [(let ([,x ,e]) ,le)
              @~a{
-              struct Racket_Object * x = (@(Expr e));
+              struct Racket_Object @x = (@(Expr e));
               @Let-Expr[le]}]
             [else
              @~a{return @(Expr e);}]))
@@ -308,7 +347,12 @@
            identify-free-variables
            desugar-when))
 
-(displayln
- (compile
-  (with-output-language (Lsrc Expr)
-    `(λ (x) 5))))
+(define x
+  (compile
+   (with-output-language (Lsrc Expr)
+     `(λ (x) 5))))
+
+(displayln x)
+(with-output-to-file "temp.c"
+  #:exists 'replace
+  (λ () (displayln x)))
