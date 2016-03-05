@@ -67,7 +67,7 @@
         (+ (+ x1 x2)
            (= x1 x2)
            (x1 x2 x3)
-           (if x1 e2 e3))))
+           (if x1 x2 x3))))
 
 (define-language L6
   (extends L5)
@@ -78,12 +78,9 @@
                        le)))
   (Expr (e)
         (- (let ([x e])
-             e*)
-           (if x1 e2 e3))
-        (+ (if x1 le2 le3)))
+             e*)))
   (Let-Expr (le)
             (+ e
-               (if x1 le2 le3)
                (let ([x e])
                  le))))
 
@@ -92,11 +89,21 @@
         [(when ,e1 ,e2)
          `(if ,e1 ,e2 #f)]))
 
+(define-pass delay-if : L1 (e) -> L1 ()
+  (Expr : Expr (e) -> Expr ()
+        [(if ,[e1] ,[e2] ,[e3])
+         (define x2 (gensym 'trash))
+         (define x3 (gensym 'trash))
+         `((if ,e1 (λ (,x2) ,e2) (λ (,x3) ,e3)) #f)]))
+
 (define-pass identify-free-variables : L1 (e) -> L2 ()
   (Expr : Expr (e) -> Expr ('())
         [,x (values x '(x))]
         [(+ ,[e1 a1] ,[e2 a2])
          (values `(+ ,e1 ,e2)
+                 (set-union a1 a2))]
+        [(= ,[e1 a1] ,[e2 a2])
+         (values `(= ,e1 ,e2)
                  (set-union a1 a2))]
         [(if ,[e1 a1] ,[e2 a2] ,[e3 a3])
          (values `(if ,e1 ,e2, e3)
@@ -172,13 +179,15 @@
               (= ,x1 ,x2)))]
         [(if ,[e1] ,[e2] ,[e3])
          (define x1 (gensym 'if))
+         (define x2 (gensym 'if))
+         (define x3 (gensym 'if))
          `(let ([,x1 ,e1])
-            (if ,x1 ,e2 ,e3))]))
+            (let ([,x2 ,e2])
+              (let ([,x3 ,e3])
+                (if ,x1 ,x2 ,x3))))]))
 
 (define-pass raise-lets : L5 (e) -> L6 ()
-  (Expr : Expr (e) -> Expr ()
-        [(if ,x1 ,e2 ,e3)
-         `(if ,x1 ,(Let-Expr e2 #f #f) ,(Let-Expr e3 #f #f))])
+  (Expr : Expr (e) -> Expr ())
   (Let-Expr : Expr (e [var #f] [next-expr #f]) -> Let-Expr ()
             [(let ([,x ,e])
                ,e*)
@@ -289,8 +298,8 @@
               return __make_bool(a.i.v == b.i.v);
              }
              
-             int __prim_if(Racket_Object a) {
-              return a.b.v;
+             Racket_Object __prim_if(Racket_Object a, Racket_Object b, Racket_Object c) {
+              return a.b.v ? b : c;
              }
 
              @(apply ~a
@@ -329,12 +338,8 @@
          @~a{__prim_plus(@x1, @x2)}]
         [(= ,x1 ,x2)
          @~a{__prim_equal(@x1, @x2)}]
-        [(if ,x1 ,le2 ,le3)
-         @~a{if(__prim_if(@x1)) {
-           @Let-Expr[le2]
-          } else {
-           @Let-Expr[le3]
-          }}]
+        [(if ,x1 ,x2 ,x3)
+         @~a{__prim_if(@x1,@x2,@x3)}]
         [(,x1 ,x2 ,x3)
          @~a{@x1(@x2, @x3)}]
         [(closure-env ,x)
@@ -372,6 +377,7 @@
            raise-closures
            make-closures
            identify-free-variables
+           delay-if
            desugar-when))
 
 (define x
@@ -380,8 +386,8 @@
      `(((λ (x)
          (λ (y)
            (if (= 6 (+ x y))
-               12
-               86))) 4) 2))))
+               x
+               y))) 4) 2))))
 
 (displayln x)
 (with-output-to-file "temp.c"
