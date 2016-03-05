@@ -34,11 +34,15 @@
   (extends L2)
   (terminals
    (+ (exact-nonnegative-integer (nat))))
+  (Var (v)
+       (+ x
+          (env-get x nat)))
   (Expr (e)
-        (- (λ (x) fe)
+        (- x
+           (λ (x) fe)
            (e1 e2))
-        (+ (closure (x (x1 x2) e) (x* ...))
-           (env-get x1 nat)
+        (+ v
+           (closure (x (x1 x2) e) (v ...))
            (closure-func x)
            (closure-env x)
            (let ([x e])
@@ -53,8 +57,8 @@
            (+ (program ([x (x1 x2) e*] ...)
                        e)))
   (Expr (e)
-        (+ (make-closure x (x* ...)))
-        (- (closure (x (x1 x2) e) (x* ...))))
+        (+ (make-closure x (v ...)))
+        (- (closure (x (x1 x2) e) (v ...))))
   (entry Program))
 
 (define-language L5
@@ -98,7 +102,7 @@
 
 (define-pass identify-free-variables : L1 (e) -> L2 ()
   (Expr : Expr (e) -> Expr ('())
-        [,x (values x '(x))]
+        [,x (values x (list x))]
         [(+ ,[e1 a1] ,[e2 a2])
          (values `(+ ,e1 ,e2)
                  (set-union a1 a2))]
@@ -136,7 +140,8 @@
                  (for/list ([i (in-list x*)]
                             [j (in-range (length x*))])
                    (cons i j))))
-         `(closure (,lambda-name (,x ,env-name) ,e*) (,x* ...))]))
+         `(closure (,lambda-name (,x ,env-name) ,e*) (,(for/list ([i (in-list x*)])
+                                                         (Expr i env fv)) ...))]))
 
 (define-pass raise-closures : L3 (e) -> L4 ()
   (definitions
@@ -145,12 +150,12 @@
     (define lamb-env  '())
     (define lamb-body '()))
   (Expr : Expr (e) -> Expr ()
-        [(closure (,x1 (,x2 ,x3) ,[e]) (,x* ...))
+        [(closure (,x1 (,x2 ,x3) ,[e]) (,[v*] ...))
          (set! lamb-name (cons x1 lamb-name))
          (set! lamb-arg (cons x2 lamb-arg))
          (set! lamb-env (cons x3 lamb-env))
          (set! lamb-body (cons e lamb-body))
-         `(make-closure ,x1 (,x* ...))])
+         `(make-closure ,x1 (,v* ...))])
   (let ([e* (Expr e)])
     `(program ([,lamb-name (,lamb-arg ,lamb-env) ,lamb-body] ...)
               ,e*)))
@@ -206,11 +211,9 @@
 (define-pass generate-c : L6 (e) -> * ()
   (definitions
     (define (build-func-decl name x1 x2)
-      @~a{
- Racket_Object @name(Racket_Object @x1, Racket_Object* @x2);})
+      @~a{Racket_Object @name(Racket_Object @x1, Racket_Object* @x2);})
     (define (build-func name x1 x2 body)
-      @~a{
- Racket_Object @name(Racket_Object @x1, Racket_Object* @x2) {
+      @~a{Racket_Object @name(Racket_Object @x1, Racket_Object* @x2) {
   @(Let-Expr body)
  }
  }))
@@ -332,7 +335,6 @@
             }])
   (Expr : Expr (e) -> * ()
         [,n @~a{__make_int(@n)}]
-        [,x (symbol->string x)]
         [,b @~a{__make_bool(@(if b "1" "0"))}]
         [(+ ,x1 ,x2)
          @~a{__prim_plus(@x1, @x2)}]
@@ -346,14 +348,16 @@
          @~a{@|x|.c.e}]
         [(closure-func ,x)
          @~a{@|x|.c.l}]
-        [(env-get ,x ,nat)
-         @~a{__env_get(@x, @nat)}]
-        [(make-closure ,x (,x* ...))
+        [(make-closure ,x (,v ...))
          @~a{__make_closure(@x,
-                            @(length x*)
+                            @(length v)
                             @(apply ~a
-                                    (for/list ([i (in-list x*)])
-                                      @~a{, @i})))}])
+                                    (for/list ([i (in-list v)])
+                                      @~a{, @Var[i]})))}])
+  (Var : Var (e) -> * ()
+       [,x (symbol->string x)]
+       [(env-get ,x ,nat)
+        @~a{__env_get(@x, @nat)}])
   (Let-Expr : Let-Expr (e) -> * ()
             [(let ([,x (closure-func ,x*)]) ,le)
              @~a{
