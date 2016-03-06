@@ -1,38 +1,114 @@
 #lang scribble/manual
 
 @require[scribble/manual
+         scriblib/footnote
+         scribble/examples
+         nanopass/base
+         "nanodemo.rkt"
          @for-label[racket/base
                     racket/format
-                    nanopass/base]]
+                    nanopass/base
+                    "nanodemo.rkt"]]
 
-@title{Writing a Compiler With Nanoapss}
+@title{Writing a Compiler with Nanoapss}
 @author{Leif Andersen}
 
 @section{Introduction}
 
 @section{Defining the Source Language}
 
-@codeblock{
- #lang at-exp nanopass
- 
+As with other Racket based languages, the first line of a
+Nanopass program is the @tt{#lang}. For this compiler, we will use:
+
+@codeblock{#lang at-exp nanopass}
+
+The @racket[nanopass] language both provides Nanopass
+specific constructs reifies the bindings in the 
+@racket[racket] language. Modules can get Nanopass bindings
+without anything provided by @racket[racket] by requiring 
+@racket[nanopass/base].
+
+The @racket[at-exp] language installs the @"@"-reader, which
+makes code generation easier. While @"@"-reader does help
+format string, using them is not strictly necessary.
+
+@racket[define-language] creates new languages in Nanopass.
+The following code defines the source language, 
+@racket[Lsrc], for our compiler:
+
+@racketblock[
  (define-language Lsrc
- (terminals
- (number (n))
- (boolean (b))
- (symbol (x)))
- (Expr (e)
- n x b
- (= e1 e2)
- (+ e1 e2)
- (if e1 e2 e3)
- (when e1 e2)
- (λ (x) e)
- (e1 e2))
- (entry Expr))}
+   (terminals
+    (int64 (n))
+    (boolean (b))
+    (symbol (x)))
+   (Expr (e)
+         n x b
+         (= e1 e2)
+         (+ e1 e2)
+         (if e1 e2 e3)
+         (when e1 e2)
+         (λ (x) e)
+         (e1 e2))
+   (entry Expr))]
+
+Terminals in Nanopass are defined by predicates. Any value
+that satisfies a predicate can be a terminal of that type.
+In the above example, @racket[b] is anything that is a 
+@racket[boolean?]. The predicates @racket[symbol?] and 
+@racket[boolean?] are provided by Nanopass. However, 
+@racket[int64] is a user created predicate:
+
+@racketblock[
+ (define (int64? x)
+   (and (integer? x)
+        (<= (- (expt 2 63)) x (- (expt 2 63) 1))))]
+
+@; <=======================
+In this compiler, @racket[Expr] is a non-terminal. It can be
+a combination of terminals and other non-terminals. These
+combinations are called production rules. Each production
+rule may contain a label, as well as several meta-variables.
+For our source language, a @racket[Expr] can be an integer
+(@racket[n]), variable (@racket[x]), boolean (@racket[b]),
+arithmetic expression (@racket[(= e1 e2)], 
+@racket[(+ e1 e2)]), branching expression @;
+
+(@racket[(if e1 e2 e3)], @racket[(when e1 e2)]), function
+(@racket[(λ (x) e)]), and function application @;
+
+(@racket[(e1 e2)]).
+@; =======================>
+
+Every meta-variable in a production rule must be unique and
+have a name matching a terminal or non-terminal. Numbers
+can be appended onto the end of a meta-variable without
+changing its type. In the expression @racket[(+ e1 e2)]: 
+@racket[+] is a tag and @racket[e1] and @racket[e2] are
+meta-variables that can contain expressions.
+
+Finally, the @racket[entry] clause tells Nanopass which
+non-terminal is the top most non-terminal. This is 
+@racket[Expr] in this compiler.
 
 @section{Building Source Expressions}
 
+Programs in a language are created by using 
+@racket[with-output-language]. this construct rebinds 
+@racket[quasiquote] to create a nanopass record.@note{
+ @racket[with-racket-quasiquote] rebinds 
+ @racket[quasiquote] back to the normal Racket version.}
 
+For example:
+
+@examples[
+ (require nanopass/base "nanodemo.rkt")
+ (with-output-language (Lsrc Expr)
+   `5)
+ (with-output-language (Lsrc Expr)
+   `(+ 4 6))
+ (with-output-language (Lsrc Expr)
+   `((λ (x) (x x)) (λ (x) (x x))))]
 
 @section{A Simple Pass: Desugaring @racket[when] Forms}
 
@@ -254,6 +330,7 @@
    @~a{#include <stdio.h>
   #include <stdarg.h>
   #include <stdlib.h>
+  #include <inttypes.h>
   
   struct Int;
   struct Bool;
@@ -265,12 +342,12 @@
   
   typedef struct Int {
    enum Tag t;
-   int v;
+   int64_t v;
    } Int;
     
   typedef struct Bool {
    enum Tag t;
-   unsigned int v;
+   int64_t v;
    } Bool;
     
   typedef struct Closure {
@@ -286,14 +363,14 @@
    Closure c;
    } Racket_Object;
     
-  Racket_Object __make_int(int i) {
+  Racket_Object __make_int(int64_t i) {
    Racket_Object o;
    o.t = INT;
    o.i.v = i;
    return o;
   }
   
-  Racket_Object __make_bool(int b) {
+  Racket_Object __make_bool(int64_t b) {
    Racket_Object o;
    o.t = BOOL;
    o.b.v = b;
@@ -381,7 +458,7 @@
                 if(ret.t == CLOSURE) {
                  printf("ans = #<procedure>\n");
                  } else if(ret.t == INT) {
-                 printf("ans = %d\n", ret.i.v);
+                 printf("ans = " PRId64 "\n", ret.i.v);
                  } else {
                  printf("ans = %s", ret.b.v ? "#t" : "#f");
                 }
@@ -448,7 +525,7 @@
 @section{Tying Everything Up}
 
 @racketblock[
- (define compile
+ (define compiler
    (compose generate-c
             raise-lets
             simplify-calls

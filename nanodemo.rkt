@@ -1,8 +1,14 @@
 #lang at-exp nanopass
 
+(provide (all-defined-out))
+
+(define (int64? x)
+  (and (integer? x)
+       (<= (- (expt 2 63)) x (- (expt 2 63) 1))))
+
 (define-language Lsrc
   (terminals
-   (number (n))
+   (int64 (n))
    (boolean (b))
    (symbol (x)))
   (Expr (e)
@@ -228,6 +234,7 @@
   @~a{#include <stdio.h>
  #include <stdarg.h>
  #include <stdlib.h>
+ #include <inttypes.h>
  
  struct Int;
  struct Bool;
@@ -239,12 +246,12 @@
  
  typedef struct Int {
   enum Tag t;
-  int v;
+  int64_t v;
   } Int;
-   
+  
  typedef struct Bool {
   enum Tag t;
-  unsigned int v;
+  int64_t v;
   } Bool;
    
  typedef struct Closure {
@@ -260,14 +267,14 @@
   Closure c;
   } Racket_Object;
    
- Racket_Object __make_int(int i) {
+ Racket_Object __make_int(int64_t i) {
   Racket_Object o;
   o.t = INT;
   o.i.v = i;
   return o;
  }
  
- Racket_Object __make_bool(int b) {
+ Racket_Object __make_bool(int64_t b) {
   Racket_Object o;
   o.t = BOOL;
   o.b.v = b;
@@ -348,7 +355,7 @@
               if(ret.t == CLOSURE) {
                printf("ans = #<procedure>\n");
               } else if(ret.t == INT) {
-               printf("ans = %d\n", ret.i.v);
+               printf("ans = %" PRId64 "\n", ret.i.v);
               } else {
                printf("ans = %s", ret.b.v ? "#t" : "#f");
               }
@@ -391,7 +398,7 @@
               @Let-Expr[le]}]
             [else @~a{return @(Expr e);}]))
 
-(define compile
+(define compiler
   (compose generate-c
            raise-lets
            simplify-calls
@@ -402,18 +409,19 @@
            desugar-when
            parse))
 
-(define x
-  (compile
-   #;`(((λ (x)
-          (λ (x)
-            x)) 1) 2)
-   '(((λ (x)
-        (λ (y)
-          (if (= 6 (+ x y))
-              x
-              y))) 4) 2)))
-
-(displayln x)
-(with-output-to-file "temp.c"
-  #:exists 'replace
-  (λ () (displayln x)))
+(module+ test
+  (define x
+    (compile
+     #;`(((λ (x)
+            (λ (x)
+              x)) 1) 2)
+     '(((λ (x)
+          (λ (y)
+            (if (= 6 (+ x y))
+                x
+                y))) 4) 2)))
+  
+  (displayln x)
+  (with-output-to-file "temp.c"
+    #:exists 'replace
+    (λ () (displayln x))))
