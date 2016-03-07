@@ -132,8 +132,42 @@ unchanged.
  (with-output-language (Lsrc Expr)
    '(+ 1 2))]
 
-@subsection["deflangscale"]{Notes on Scaling Up}
+@subsection[#:tag "deflangscale"]{Notes on Scaling Up}
 
+The source language used in this tutorial is clearly a
+small one that is designed to make it easy to learn how to
+write simple compilers using Nanopass. There are a few
+design choices that make it non trivial (although still
+possible) to scale up to a production quality language.
+
+First, this source language is missing any form of mutation.
+This feature is lacking because handing it requires the
+compiler to reason about assigned variables, and requires
+the runtime to create mutable cells in a heap to store these
+boxes. We have omitted this as implementing this is
+straightforward, and adds little understanding to how to use
+the framework. Interested readers can read about how to
+implement the runtime for these cells in 
+@hyperlink["https://cs.brown.edu/~sk/Publications/Books/ProgLangs/2007-04-26/"]{
+ Programming Languages: Application and Interpretation}.
+Additionally, techniques used in this tutorial can be used
+to detect assigned variables, making it possible to
+determine when a mutable cell must be used.@note{TODO:
+ Source for faster assigned variable detection.}
+
+Second, in this compiler, primitives such as @racket[=] and
+@racket[+] are encoded directly in the language. While this
+makes sense for primitives that significantly differ
+syntactically, variables with similar syntax will benefit
+from having a @racket[prim?] predicate and terminal. This is
+because the vast majority of the rules that apply to
+variables are identical to each other. We have used
+primitives directly in our source language for simplicity.
+Separating out primitives, however, is a trivial task.
+
+Third, datums
+
+Fourth, arity
 
 @section{A Simple Pass: Desugaring @racket[when] Forms}
 
@@ -298,7 +332,7 @@ to be transformed, it may contain subexpressions that do.
  (with-output-language (Lsrc Expr)
    (desugar-when `(+ 5 (when #t 6))))]
 
-@subsection["whenifscale"]{Notes on Scaling Up}
+@subsection[#:tag "whenifscale"]{Notes on Scaling Up}
 
 Converting @racket[when] expressions to @racket[if]
 expressions serves as a simple example to illustrate the
