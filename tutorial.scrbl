@@ -96,7 +96,7 @@ Finally, the @racket[entry] clause tells Nanopass which
 non-terminal is the top most non-terminal. This is 
 @racket[Expr] in this compiler.
 
-@section{Building Source Expressions}
+@subsection{Building Source Expressions}
 
 Rather than building a parser, for now, we will use 
 @racket[with-output-language] to build programs in 
@@ -131,6 +131,9 @@ unchanged.
                `(+ 5 6 7)))
  (with-output-language (Lsrc Expr)
    '(+ 1 2))]
+
+@subsection["deflangscale"]{Notes on Scaling Up}
+
 
 @section{A Simple Pass: Desugaring @racket[when] Forms}
 
@@ -178,7 +181,8 @@ without evaluating the body.
    (desugar-when `(λ (x) (when x (λ (y) y)))))]
 
 A pass constructed with @racket[define-pass] is composed of
-a signature, a body, and a list of processors. In the above pass, this signature is:
+a signature, a body, and a list of processors. In the above
+pass, this signature is:
 
 @racketblock[desugar-when : Lsrc (e) -> L1 ()]
 
@@ -247,8 +251,31 @@ use @racket[unquote] (@tt{,}) to escape.
 Using @racket[unquote] means to match a subexpression, and
 bind it to the variable given. In this pattern, however,
 these variables are surrounded by square bracket (@tt{[]}).
-These bracket are for a feature of Nanopass called
-catamorphisms.
+Bracket are for a feature of Nanopass called catamorphisms.
+@note{The term catamorphism comes from category theory.
+ While related, catamorphisms in this setting are used
+ slightly differently and are more closely related to the
+ @hyperlink["http://www.cs.indiana.edu/chezscheme/match/"]{IU Pattern Matcher}
+ or @tt{app} forms in @racket[match].}
+
+These so-called catamorphisms further reduce boilerplate by
+handling recursion automatically. The processor determines
+input and output non-terminals by using the location in the
+pattern and the name of the pattern variable. If the pass
+contains a processor that matches this signature, it is used
+to transform the variable. Otherwise, a default processor
+that translates the expression to a similar one in the
+target is used. Finally, the output is bound to the variable
+inside of the brackets.
+
+In this example, @racket[e1] is the first variable in a 
+@racket[when] clause, which indicates that it is an 
+@racket[Expr]. Next, because the variables name begins with
+@racket[e], its output is also an @racket[Expr]. The
+process named @racket[Expr] matches this signature, and is
+used to process the variable. The result is bound to the
+variable @racket[e1]. An analogous process happens for 
+@racket[e2].
 
 An equivalent pattern that does not use catamorphisms would
 be:
@@ -256,6 +283,30 @@ be:
 @racketblock[
  [(when ,e1 ,e2)
   `(if ,(Expr e1) ,(Expr e2) #f)]]
+
+Here, @racket[e1] and @racket[e2] are expressions in 
+@racket[Lsrc], and thus must be passed into the 
+@racket[Expr] processor to be converted into @racket[L1]
+expression.
+
+Note that the recursion for expressions not listed in a
+processor is important. Even if an expression does not need
+to be transformed, it may contain subexpressions that do.
+
+@examples[
+ #:eval nano-eval
+ (with-output-language (Lsrc Expr)
+   (desugar-when `(+ 5 (when #t 6))))]
+
+@subsection["whenifscale"]{Notes on Scaling Up}
+
+Converting @racket[when] expressions to @racket[if]
+expressions serves as a simple example to illustrate the
+benefits of using Nanopass to write compilers, while also
+showing the basics of how to use it. This particular
+transformation, however, is simple enough that it is
+generally implemented in a language's macro expander or
+during its parsing pass.
 
 @section{Delaying @racket[if] Forms}
 
