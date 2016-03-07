@@ -112,7 +112,7 @@
 
 (define-pass desugar-when : Lsrc (e) -> L1 ()
   (Expr : Expr (e) -> Expr ()
-        [(when ,e1 ,e2)
+        [(when ,[e1] ,[e2])
          `(if ,e1 ,e2 #f)]))
 
 (define-pass delay-if : L1 (e) -> L1 ()

@@ -6,12 +6,17 @@
          nanopass/base
          "nanodemo.rkt"
          @for-label[racket/base
+                    racket/match
                     racket/format
-                    nanopass/base
-                    "nanodemo.rkt"]]
+                    nanopass/base]]
 
 @title{Writing a Compiler with Nanoapss}
 @author{Leif Andersen}
+
+@(define nano-eval (make-base-eval))
+@examples[#:eval nano-eval
+          #:hidden
+          (require nanopass/base "nanodemo.rkt")]
 
 @section{Introduction}
 
@@ -93,16 +98,19 @@ non-terminal is the top most non-terminal. This is
 
 @section{Building Source Expressions}
 
-Programs in a language are created by using 
-@racket[with-output-language]. this construct rebinds 
+Rather than building a parser, for now, we will use 
+@racket[with-output-language] to build programs in 
+@racket[Lsrc]. @racket[with-output-language] rebinds 
 @racket[quasiquote] to create a nanopass record.@note{
  @racket[with-racket-quasiquote] rebinds 
  @racket[quasiquote] back to the normal Racket version.}
 
-For example:
+@racket[with-output-language] additionally takes a language
+and a non-terminal in that language. It uses this
+information to determine which records to construct.
 
 @examples[
- (require nanopass/base "nanodemo.rkt")
+ #:eval nano-eval
  (with-output-language (Lsrc Expr)
    `5)
  (with-output-language (Lsrc Expr)
@@ -110,7 +118,27 @@ For example:
  (with-output-language (Lsrc Expr)
    `((λ (x) (x x)) (λ (x) (x x))))]
 
+Although @racket[quasiquote] appears to be creating a list,
+it is actually creating records with a fixed arity. Thus,
+it will error if the expression does not match a pattern in
+the language. Finally, only @racket[quasiquote] is rebound,
+so other list creating constructs such a @racket[quote] are
+unchanged.
+
+@examples[
+ #:eval nano-eval
+ (eval:error (with-output-language (Lsrc Expr)
+               `(+ 5 6 7)))
+ (with-output-language (Lsrc Expr)
+   '(+ 1 2))]
+
 @section{A Simple Pass: Desugaring @racket[when] Forms}
+
+Languages created with @racket[define-language] can be
+extensions of other languages. These so called extensions
+are indicated with the @racket[extends] keyword.
+
+The following language extends @racket[Lsrc]:
 
 @racketblock[
  (define-language L1
@@ -118,11 +146,93 @@ For example:
    (Expr (e)
          (- (when e1 e2))))]
 
+The @racket[+] form adds new expressions to non-terminals,
+and the @racket[-] form removes production rules. These
+forms can also be used inside of a @racket[terminals] form.
+In this case, it adds and remove terminals.
+
+Nanopass uses @racket[define-pass] to create new passes.
+Unlike languages, passes are functions that transforms
+expressions from one language to another. The following pass
+converts expressions from @racket[Lsrc] to @racket[L1]:
+
 @racketblock[
  (define-pass desugar-when : Lsrc (e) -> L1 ()
    (Expr : Expr (e) -> Expr ()
-         [(when ,e1 ,e2)
+         [(when ,[e1] ,[e2])
           `(if ,e1 ,e2 #f)]))]
+
+Because @racket[when] is not a production in @racket[L1],
+the @racket[desugar-when] pass converts uses of 
+@racket[when] into @racket[if]. Unlike @racket[if], 
+@racket[when] expressions only contain a condition and a
+body. When a @racket[when] condition in our language is 
+@racket[#f], the entire expression evaluates to @racket[#f],
+without evaluating the body.
+
+@examples[
+ #:eval nano-eval
+ (with-output-language (Lsrc Expr)
+   (desugar-when `(when #f 42)))
+ (with-output-language (Lsrc Expr)
+   (desugar-when `(λ (x) (when x (λ (y) y)))))]
+
+A pass constructed with @racket[define-pass] is composed of
+a signature, a body, and a list of processors. In the above pass, this signature is:
+
+@racketblock[desugar-when : Lsrc (e) -> L1 ()]
+
+The name of this pass is @racket[desugar-when]. It is
+followed by @racket[Lsrc], which indicates that the source
+its language, and @racket[L1] indicates the target language
+for the pass. The @racket[(e)] is a list of the arguments
+the pass takes. In this example, it is only one, which is
+the source expression. The empty list @racket[()] is a list
+of any extra return values that the pass may give. This pass
+only returns an expression in the target language, and is
+thus empty.
+
+The remainder of the above pass is a processor, and is
+discussed below in @secref{processors}.
+
+@subsection[#:tag "processors"]{Processors and Catamorphisms}
+
+The following is a processor in the @racket[desugare-when]
+pass shown above:
+
+@racketblock[
+ (Expr : Expr (e) -> Expr ()
+       [(when ,[e1] ,[e2])
+        `(if ,e1 ,e2 #f)])]
+
+Like passes, processors are functions and begin with a
+signature:
+
+@racketblock[Expr : Expr (e) -> Expr ()]
+
+The first @racket[Expr] in this process is the name of this
+process. While this name is arbitrary, @racket[Expr] is a
+reasonable first name as it transforms expressions. The
+second @racket[Expr] indicates that the input for this
+processor is an @racket[Expr] in @racket[Lsrc]. This
+information is determined by input language of the pass.
+Analogously, the last @racket[Expr] indicates that the
+output for this processor is an @racket[Expr] in 
+@racket[L1]. Finally, like the pass itself, @racket[(e)]
+means that this processor takes in one argument, an
+expression, and has no additional return values besides the
+output expression.
+
+After the signature, a processor is composed of a series of
+patterns and templates. Like Racket's @racket[match] form,
+
+@racketblock[
+ [(when ,[e1] ,[e2])
+  `(if ,e1 ,e2 #f)]]
+
+@racketblock[
+ [(when ,e1 ,e2)
+  `(if ,(Expr e1) ,(Expr e2) #f)]]
 
 @section{Delaying @racket[if] Forms}
 
@@ -522,7 +632,7 @@ For example:
            [else e]))
    (Expr e))]
 
-@section{Tying Everything Up}
+@section{Tying Everything Together}
 
 @racketblock[
  (define compiler
