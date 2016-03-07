@@ -140,14 +140,16 @@ write simple compilers using Nanopass. There are a few
 design choices that make it non trivial (although still
 possible) to scale up to a production quality language.
 
-First, this source language is missing any form of mutation.
-This feature is lacking because handing it requires the
-compiler to reason about assigned variables, and requires
-the runtime to create mutable cells in a heap to store these
-boxes. We have omitted this as implementing this is
-straightforward, and adds little understanding to how to use
-the framework. Interested readers can read about how to
-implement the runtime for these cells in 
+First, this source language is missing any form of
+mutation. This feature is lacking because handing it
+requires the compiler to reason about assigned variables,
+and requires the runtime to create mutable cells in a heap
+to store these boxes. Doing so additionally necessitates
+creating a garbage collector. We have omitted this as
+implementing this is straightforward, and adds little
+understanding to how to use the framework. Interested
+readers can read about how to implement the runtime for
+these cells in 
 @hyperlink["https://cs.brown.edu/~sk/Publications/Books/ProgLangs/2007-04-26/"]{
  Programming Languages: Application and Interpretation}.
 Additionally, techniques used in this tutorial can be used
@@ -163,11 +165,31 @@ from having a @racket[prim?] predicate and terminal. This is
 because the vast majority of the rules that apply to
 variables are identical to each other. We have used
 primitives directly in our source language for simplicity.
-Separating out primitives, however, is a trivial task.
+Separating out primitives, however, is a straightforward task.
 
-Third, datums
+Third, our source language only contains 64 bit integers
+and booleans as datums. Larger languages will have other
+types of datums such as arbitrarily large integers, floats,
+strings, lists, and structs. We did not include these in
+this compiler because adding them is a straightforward task.
+Additionally, adding more data types requires adding more
+primitives to handle these data types.
 
-Fourth, arity
+Fourth, all functions take exactly one argument. All of the
+transformations shown in this tutorial can be trivially
+extended to multi-arity functions. Doing so complicates the
+passes shown in this tutorial too quickly. Rather, we first
+introduce passes that operate over expressions with a fixed
+number of size. Later in this compiler, however, we begin to
+show examples of operations on expressions that have an
+arbitrary number of arguments. This is because many
+intermediate forms require expressions with a variadic
+number of arguments.
+
+Finally, this language is lacking common expressions such as
+@racket[let] and @racket[letrec]. We omitted these because
+they complicate the implementation of the compiler, and add
+little value on learning to use Nanopass.
 
 @section{A Simple Pass: Desugaring @racket[when] Forms}
 
