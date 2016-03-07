@@ -225,10 +225,33 @@ output expression.
 
 After the signature, a processor is composed of a series of
 patterns and templates. Like Racket's @racket[match] form,
+the processor selects the first pattern to match the given
+expression. If none of the patterns match, Nanopass will
+convert the expression to an equivalent one in the target
+language and recursively match on all subpatterns in the
+expression. This automatic behavior is how Nanopass
+compilers reduce the amount of boilerplate.
+
+The above processor contains one pattern:
 
 @racketblock[
  [(when ,[e1] ,[e2])
   `(if ,e1 ,e2 #f)]]
+
+This pattern does the actual transformation of @racket[if]
+forms to @racket[when] forms. The first line is the pattern
+itself. Unlike match (but like @racket[syntax-parse]),
+patterns begin already in a @racket[quasiquote], and must
+use @racket[unquote] (@tt{,}) to escape.
+
+Using @racket[unquote] means to match a subexpression, and
+bind it to the variable given. In this pattern, however,
+these variables are surrounded by square bracket (@tt{[]}).
+These bracket are for a feature of Nanopass called
+catamorphisms.
+
+An equivalent pattern that does not use catamorphisms would
+be:
 
 @racketblock[
  [(when ,e1 ,e2)
@@ -243,6 +266,11 @@ patterns and templates. Like Racket's @racket[match] form,
           (define x2 (gensym 'trash))
           (define x3 (gensym 'trash))
           `((if ,e1 (λ (,x2) ,e2) (λ (,x3) ,e3)) #f)]))]
+
+@examples[
+ #:eval nano-eval
+ (with-output-language (L1 Expr)
+   (delay-if `(if #f 42 84)))]
 
 @section{Closure Converstion}
 
@@ -647,3 +675,10 @@ patterns and templates. Like Racket's @racket[match] form,
             parse))]
 
 @section{Further Reading}
+
+@section{Epilogue: Other useful Nanopass Constructs}
+
+@subsection{Pattern Matching Languages}
+
+@subsection{Viewing Expanded Languages}
+
