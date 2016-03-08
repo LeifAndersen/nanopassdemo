@@ -458,6 +458,8 @@ does, however, support higher order functions through the
 use of function pointers. Unfortunately function pointers do
 not store their own environments. Thus, closure conversion @cite[appelcont].
 
+@subsection{Free Variable Identification}
+
 @racketblock[
  (define-language L2
    (extends L1)
@@ -466,28 +468,6 @@ not store their own environments. Thus, closure conversion @cite[appelcont].
          (+ (λ (x) fe)))
    (FreeVars-Expr (fe)
                   (+ (free (x ...) e))))]
-
-@racketblock[
- (define-language L3
-   (extends L2)
-   (terminals
-    (+ (exact-nonnegative-integer (nat))))
-   (Var (v)
-        (+ x
-           (env-get x nat)))
-   (Expr (e)
-         (- x
-            (λ (x) fe)
-            (e1 e2))
-         (+ v
-            (closure (x (x1 x2) e) (v ...))
-            (closure-func x)
-            (closure-env x)
-            (let ([x e])
-              e*)
-            (e1 e2 e3)))
-   (FreeVars-Expr (fe)
-                  (- (free (x ...) e))))]
 
 @racketblock[
  (define-pass identify-free-variables : L1 (e) -> L2 ()
@@ -511,6 +491,30 @@ not store their own environments. Thus, closure conversion @cite[appelcont].
                   (set-union a1 a2))])
    (let-values ([(res _) (Expr e)])
      res))]
+
+@subsection{Explicit Closure Creation}
+
+@racketblock[
+ (define-language L3
+   (extends L2)
+   (terminals
+    (+ (exact-nonnegative-integer (nat))))
+   (Var (v)
+        (+ x
+           (env-get x nat)))
+   (Expr (e)
+         (- x
+            (λ (x) fe)
+            (e1 e2))
+         (+ v
+            (closure (x (x1 x2) e) (v ...))
+            (closure-func x)
+            (closure-env x)
+            (let ([x e])
+              e*)
+            (e1 e2 e3)))
+   (FreeVars-Expr (fe)
+                  (- (free (x ...) e))))]
 
 @racketblock[
  (define-pass make-closures : L2 (e) -> L3 ()
