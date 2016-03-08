@@ -1,9 +1,11 @@
 #lang scribble/manual
 
-@require[scribble/manual
+@require[(except-in scribble/manual cite)
          scriblib/footnote
          scribble/examples
+         scriblib/autobib
          nanopass/base
+         "bib.rkt"
          "nanodemo.rkt"
          @for-label[racket/base
                     racket/match
@@ -429,12 +431,17 @@ The following is an example of a language that enforces
 
 All functions in this language take exactly one argument.
 The ones in this pass, however, are thunks that do not
-require an argument.
+require an argument. To accommodate this, we generate to two
+unused variables, and apply the result of the @racket[if]
+expression to @racket[#f].
 
 @examples[
  #:eval nano-eval
  (with-output-language (L1 Expr)
    (delay-if `(if #f 42 84)))]
+
+After this transformation, we can treat @racket[if] as an
+entirely eager expression.
 
 @subsection[#:tag "ifscale"]{Notes on Scaling up}
 
@@ -444,7 +451,12 @@ Second: Better generation of temporary variables.
 
 Third: Actual thunks
 
-@section{Closure Converstion}
+@section{Closure Conversion}
+
+Unlike our source language, C does not have closures. It
+does, however, support higher order functions through the
+use of function pointers. Unfortunately function pointers do
+not store their own environments. Thus, closure conversion @cite[appelcont].
 
 @racketblock[
  (define-language L2
@@ -453,8 +465,9 @@ Third: Actual thunks
          (- (λ (x) e))
          (+ (λ (x) fe)))
    (FreeVars-Expr (fe)
-                  (+ (free (x ...) e))))
- 
+                  (+ (free (x ...) e))))]
+
+@racketblock[
  (define-language L3
    (extends L2)
    (terminals
@@ -522,6 +535,10 @@ Third: Actual thunks
           `(closure (,lambda-name (,x ,env-name) ,e*)
                     (,(for/list ([i (in-list x*)])
                         (Expr i env fv)) ...))]))]
+
+@subsection[#:tag "ccscale"]{Notes on Scaling Up}
+
+First, intermediate passes.
 
 @section{Turning Closures to Function Pointers}
 
@@ -855,3 +872,5 @@ Third: Actual thunks
 @subsection{Viewing Expanded Languages}
 
 @section{Bonus: Creating a #lang}
+
+@generate-bibliography[]
