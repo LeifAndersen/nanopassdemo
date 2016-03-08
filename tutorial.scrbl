@@ -366,6 +366,39 @@ during its parsing pass.
 
 @section{Delaying @racket[if] Forms}
 
+Unlike function application, the body and alternate body of
+@racket[if] expressions should only be evaluated on the
+result of the conditional expression. Worse still, @tt{if}
+expressions in C are statements rather than expressions.
+
+Ternary operators, however, are expressions. Using ternary
+operators directly is still problematic because expressions
+in C are not as expressive as ones in our source. For
+example, expressions in our source can create closures apply
+them to a new variable, and call that closure at a later
+time, all in one expression. We will eventually need to
+translate some of these operations into statements.
+
+Translating expressions into statements is problematic with
+the delayed nature of @racket[if] expressions. Specifically,
+we want to first evaluate the condition, and then evaluate
+either the body or alternative.@note{If our source was
+ effect free, we could evaluate all subexpressions of 
+ @racket[if]. This language does, however, have one major
+ effect, non-termination. We only want an @racket[if]
+ expression to not terminate if the appropriate
+ subexpressions do not terminate.}
+
+One way to delay the values of @racket[if] expressions is
+to wrap them in function expressions, and apply the whole
+expression to a dummy variable. After this transformation
+the entire expression can be evaluated eagerly, and the
+functions themselves will give the condition body delayed
+semantics.
+
+The following pass transforms delayed @racket[if]
+expressions to equivalent eager expressions:
+
 @racketblock[
  (define-pass delay-if : L1 (e) -> L1 ()
    (Expr : Expr (e) -> Expr ()
@@ -374,10 +407,42 @@ during its parsing pass.
           (define x3 (gensym 'trash))
           `((if ,e1 (λ (,x2) ,e2) (λ (,x3) ,e3)) #f)]))]
 
+Both the source and target languages for this pass are 
+@racket[L1]. It is possible to create a new language that
+statically enforces if expressions to store only functions.
+Doing so in this case does not prevent further
+optimizations, but does help programmers find bugs in their
+compilers.
+
+The following is an example of a language that enforces 
+@racket[f] expressions to store functions in their body:
+
+@racketblock[
+ (define-language L1-alt
+   (Expr (e)
+         (- (λ (x) e)
+            (if e1 e2 e3))
+         (+ l
+            (if e l2 l3)))
+   (Lambda (l)
+           (+ (λ (x) e))))]
+
+All functions in this language take exactly one argument.
+The ones in this pass, however, are thunks that do not
+require an argument.
+
 @examples[
  #:eval nano-eval
  (with-output-language (L1 Expr)
    (delay-if `(if #f 42 84)))]
+
+@subsection[#:tag "ifscale"]{Notes on Scaling up}
+
+First: Other means of delaying
+
+Second: Better generation of temporary variables.
+
+Third: Actual thunks
 
 @section{Closure Converstion}
 
@@ -789,3 +854,4 @@ during its parsing pass.
 
 @subsection{Viewing Expanded Languages}
 
+@section{Bonus: Creating a #lang}
