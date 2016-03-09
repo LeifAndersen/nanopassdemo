@@ -142,21 +142,20 @@ write simple compilers using Nanopass. There are a few
 design choices that make it non trivial (although still
 possible) to scale up to a production quality language.
 
-First, this source language is missing any form of
-mutation. This feature is lacking because handing it
-requires the compiler to reason about assigned variables,
-and requires the runtime to create mutable cells in a heap
-to store these boxes. Doing so additionally necessitates
-creating a garbage collector. We have omitted this as
-implementing this is straightforward, and adds little
-understanding to how to use the framework. Interested
-readers can read about how to implement the runtime for
-these cells in 
+First, this source language is missing any form of mutation.
+This feature is lacking because handing it requires the
+compiler to reason about assigned variables, and requires
+the runtime to create mutable cells in a heap to store these
+boxes. Doing so additionally necessitates creating a garbage
+collector. We have omitted this as implementing this is
+straightforward, and adds little understanding to how to use
+the framework. Interested readers can read about how to
+implement the runtime for these cells in 
 @hyperlink["https://cs.brown.edu/~sk/Publications/Books/ProgLangs/2007-04-26/"]{
- Programming Languages: Application and Interpretation}.
-Additionally, techniques used in this tutorial can be used
-to detect assigned variables, making it possible to
-determine when a mutable cell must be used.@note{TODO:
+ Programming Languages: Application and Interpretation}
+@cite[plai]. Additionally, techniques used in this tutorial
+can be used to detect assigned variables, making it possible
+to determine when a mutable cell must be used. @note{TODO:
  Source for faster assigned variable detection.}
 
 Second, in this compiler, primitives such as @racket[=] and
@@ -456,7 +455,8 @@ Third: Actual thunks
 Unlike our source language, C does not have closures. It
 does, however, support higher order functions through the
 use of function pointers. Unfortunately function pointers do
-not store their own environments. Thus, closure conversion @cite[appelcont].
+not store their own environments. Thus, we use closure
+conversion@cite[appelcont] as our first step to supporting closures.
 
 @subsection{Free Variable Identification}
 
@@ -543,6 +543,8 @@ not store their own environments. Thus, closure conversion @cite[appelcont].
 @subsection[#:tag "ccscale"]{Notes on Scaling Up}
 
 First, intermediate passes.
+
+Lambda Lifting@cite[lambdalifting].
 
 @section{Turning Closures to Function Pointers}
 
