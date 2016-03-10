@@ -1,6 +1,30 @@
 #lang at-exp nanopass
 
-(provide (all-defined-out))
+(provide (except-out (all-defined-out)
+                     define-language
+                     define-pass))
+
+(require (prefix-in nanopass: nanopass/base)
+         (for-syntax racket/syntax
+                     syntax/parse)
+         (for-label racket/base
+                    racket/match
+                    racket/format
+                    nanopass/base))
+(define-syntax (define-language stx)
+  (syntax-parse stx
+    [(define-language name . rest)
+     #:with name-code (format-id stx "~a-code" #'name)
+     #`(begin
+         (define name-code (quote-syntax #,stx))
+         (nanopass:define-language name . rest))]))
+(define-syntax(define-pass stx)
+  (syntax-parse stx
+    [(define-pass name . rest)
+     #:with name-code (format-id stx "~a-code" #'name)
+     #`(begin
+         (define name-code (quote-syntax #,stx))
+         (nanopass:define-pass name . rest))]))
 
 (define (int64? x)
   (and (integer? x)
