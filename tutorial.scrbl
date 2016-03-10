@@ -54,6 +54,7 @@ The following code defines the source language,
          (= e1 e2)
          (+ e1 e2)
          (if e1 e2 e3)
+         (cond [e1 e2] ... e3)
          (when e1 e2)
          (λ (x) e)
          (e1 e2))
@@ -365,6 +366,25 @@ transformation, however, is simple enough that it is
 generally implemented in a language's macro expander or
 during its parsing pass.
 
+@section{Desugaring @racket[cond] and recursive passes}
+
+@racketblock[
+ (define-language L2
+   (extends L1)
+   (Expr (e)
+         (- (cond [e1 e2] ... [e3]))))]
+
+@racketblock[
+ (define-pass desugar-cond : L1 (e) -> L2 ()
+   (Expr : Expr (e) -> Expr ()
+         [(cond [,[e1]])
+          e1]
+         [(cond [,[e1] ,[e1*]] [,e2 ,e2*]  ...  [,e3])
+          `(if ,e1  ,e1*  ,(with-output-language (L1 Expr)
+                             (Expr `(cond [,e2 ,e2*] ... [,e3]))))]))]
+
+@subsection[#:tag "condscale"]{Notes on Scaling Up}
+
 @section{Delaying @racket[if] Forms}
 
 Unlike function application, the body and alternate body of
@@ -401,7 +421,7 @@ The following pass transforms delayed @racket[if]
 expressions to equivalent eager expressions:
 
 @racketblock[
- (define-pass delay-if : L1 (e) -> L1 ()
+ (define-pass delay-if : L2 (e) -> L2 ()
    (Expr : Expr (e) -> Expr ()
          [(if ,[e1] ,[e2] ,[e3])
           (define x2 (gensym 'trash))
@@ -419,7 +439,8 @@ The following is an example of a language that enforces
 @racket[f] expressions to store functions in their body:
 
 @racketblock[
- (define-language L1-alt
+ (define-language L2-alt
+   (extends L2)
    (Expr (e)
          (- (λ (x) e)
             (if e1 e2 e3))
@@ -436,7 +457,7 @@ expression to @racket[#f].
 
 @examples[
  #:eval nano-eval
- (with-output-language (L1 Expr)
+ (with-output-language (L2 Expr)
    (delay-if `(if #f 42 84)))]
 
 After this transformation, we can treat @racket[if] as an
@@ -458,11 +479,66 @@ use of function pointers. Unfortunately function pointers do
 not store their own environments. Thus, we use closure
 conversion@cite[appelcont] as our first step to supporting closures.
 
+Closure conversion is the process of removing all free
+variables from functions, and passing them in explicitly in
+the form of an environment. The function associated with the
+closure will eventually be lifted to the top level, but the
+environment remains in the functions plaice. This is
+possible because environment mappings are first class values
+in C.
+
+For example, if a function has one free variable @racket[y],
+the transformation would look like:
+
+@racketblock[
+ (lambda (x) .... y ....)
+ (code:comment "=>")
+ (lambda (x env) .... (env-get env y) ....)]
+
+Unfortunately, this transformation is not enough to create a
+closure object. When a lambda occurs we need to also
+explicitly create the environment associated with it. Doing
+so allows the closure to bind to the variables as the
+lambda's definition, rather then whatever they happen to be
+at the call site. In other words, we want to preserve 
+@hyperlink[lexicalscope-link]{lexical scoping} in our target language.
+
+Applying this idea to the transformation above gives the
+following transformation:
+
+@racketblock[
+ (lambda (x env) .... (env-get env y) ....)
+ (code:comment "=>")
+ (closure (name (x env) ... (env-get env y) ...) (y))]
+
+Here, @racket[closure] is a piece of syntax to describe the
+@racket[closure] object. The first argument is the function
+expression, which has now been given the name
+@racket[name]. The second argument is the variables that
+this closure's environment binds, in this case @racket[y].
+
+Now that
+
+@racketblock[
+ (f x)
+ (code:comment "=>")
+ ((closure-func f) x (closure-env f))]
+
+We perform closure conversion in two passes. First, we
+create a pass to identify all free variables in each
+function. This pass enables us to transform free variables
+into environment lookups, as well as determine which
+variables should be passed in as part of the closure
+environment. The second pass creates the actual explicit
+closure structures. These structures still contain the
+function and environment, while a later pass will lift them
+to the top.
+
 @subsection{Free Variable Identification}
 
 @racketblock[
- (define-language L2
-   (extends L1)
+ (define-language L3
+   (extends L2)
    (Expr (e)
          (- (λ (x) e))
          (+ (λ (x) fe)))
@@ -470,7 +546,7 @@ conversion@cite[appelcont] as our first step to supporting closures.
                   (+ (free (x ...) e))))]
 
 @racketblock[
- (define-pass identify-free-variables : L1 (e) -> L2 ()
+ (define-pass identify-free-variables : L2 (e) -> L3 ()
    (Expr : Expr (e) -> Expr ('())
          [,x (values x (list x))]
          [(+ ,[e1 a1] ,[e2 a2])
@@ -495,8 +571,8 @@ conversion@cite[appelcont] as our first step to supporting closures.
 @subsection{Explicit Closure Creation}
 
 @racketblock[
- (define-language L3
-   (extends L2)
+ (define-language L4
+   (extends L3)
    (terminals
     (+ (exact-nonnegative-integer (nat))))
    (Var (v)
@@ -517,7 +593,7 @@ conversion@cite[appelcont] as our first step to supporting closures.
                   (- (free (x ...) e))))]
 
 @racketblock[
- (define-pass make-closures : L2 (e) -> L3 ()
+ (define-pass make-closures : L3 (e) -> L4 ()
    (Expr : Expr (e [env #f] [fv '()]) -> Expr ()
          [(,[e1] ,[e2])
           (define clo-name (gensym 'clo))
@@ -549,8 +625,8 @@ Lambda Lifting@cite[lambdalifting].
 @section{Turning Closures to Function Pointers}
 
 @racketblock[
- (define-language L4
-   (extends L3)
+ (define-language L5
+   (extends L4)
    (Program (p)
             (+ (program ([x (x1 x2) e*] ...)
                         e)))
@@ -560,7 +636,7 @@ Lambda Lifting@cite[lambdalifting].
    (entry Program))]
 
 @racketblock[
- (define-pass raise-closures : L3 (e) -> L4 ()
+ (define-pass raise-closures : L4 (e) -> L5 ()
    (definitions
      (define lamb-name '())
      (define lamb-arg  '())
@@ -580,8 +656,8 @@ Lambda Lifting@cite[lambdalifting].
 @section{Converting Expressions into Statements}
 
 @racketblock[
- (define-language L5
-   (extends L4)
+ (define-language L6
+   (extends L5)
    (Expr (e)
          (- (+ e1 e2)
             (= e1 e2)
@@ -592,8 +668,8 @@ Lambda Lifting@cite[lambdalifting].
             (x1 x2 x3)
             (if x1 x2 x3))))
  
- (define-language L6
-   (extends L5)
+ (define-language L7
+   (extends L6)
    (Program (p)
             (- (program ([x (x1 x2) e*] ...)
                         e))
@@ -608,7 +684,7 @@ Lambda Lifting@cite[lambdalifting].
                   le))))]
 
 @racketblock[
- (define-pass simplify-calls : L4 (e) -> L5 ()
+ (define-pass simplify-calls : L5 (e) -> L6 ()
    (Expr : Expr (e) -> Expr ()
          [(,[e1] ,[e2] ,[e3])
           (define x1 (gensym 'app))
@@ -639,7 +715,7 @@ Lambda Lifting@cite[lambdalifting].
                (let ([,x3 ,e3])
                  (if ,x1 ,x2 ,x3))))]))
  
- (define-pass raise-lets : L5 (e) -> L6 ()
+ (define-pass raise-lets : L6 (e) -> L7 ()
    (Expr : Expr (e) -> Expr ())
    (Let-Expr : Expr (e [var #f] [next-expr #f]) -> Let-Expr ()
              [(let ([,x ,e])
@@ -750,7 +826,7 @@ Lambda Lifting@cite[lambdalifting].
 @section{Code Generation}
 
 @codeblock[#:keep-lang-line? #f]|{#lang at-exp nanopass
- (define-pass generate-c : L6 (e) -> * ()
+ (define-pass generate-c : L7 (e) -> * ()
    (definitions
      (define (c s)
        (list->string
@@ -848,6 +924,8 @@ Lambda Lifting@cite[lambdalifting].
             `(if ,e1 ,e2 ,e3)]
            [`(when ,(app Expr e1) ,(app Expr e2))
             `(when ,e1 ,e2)]
+           [`(cond [,(app Expr e1) ,(app Expr e2)] ... [,(app Expr e3)])
+            `(cond [,e1 ,e2] ... [,e3])]
            [`(λ (,x) ,(app Expr e1))
             `(λ (,x) ,e1)]
            [`(,(app Expr e1) ,(app Expr e2))
@@ -866,6 +944,7 @@ Lambda Lifting@cite[lambdalifting].
             make-closures
             identify-free-variables
             delay-if
+            desugar-cond
             desugar-when
             parse))]
 

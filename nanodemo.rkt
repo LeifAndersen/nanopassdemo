@@ -16,6 +16,7 @@
         (= e1 e2)
         (+ e1 e2)
         (if e1 e2 e3)
+        (cond [e1 e2] ... [e3])
         (when e1 e2)
         (λ (x) e)
         (e1 e2))
@@ -29,13 +30,18 @@
 (define-language L2
   (extends L1)
   (Expr (e)
+        (- (cond [e1 e2] ... [e3]))))
+
+(define-language L3
+  (extends L2)
+  (Expr (e)
         (- (λ (x) e))
         (+ (λ (x) fe)))
   (FreeVars-Expr (fe)
                  (+ (free (x ...) e))))
 
-(define-language L3
-  (extends L2)
+(define-language L4
+  (extends L3)
   (terminals
    (+ (exact-nonnegative-integer (nat))))
   (Var (v)
@@ -55,8 +61,8 @@
   (FreeVars-Expr (fe)
                  (- (free (x ...) e))))
 
-(define-language L4
-  (extends L3)
+(define-language L5
+  (extends L4)
   (Program (p)
            (+ (program ([x (x1 x2) e*] ...)
                        e)))
@@ -65,8 +71,8 @@
         (- (closure (x (x1 x2) e) (v ...))))
   (entry Program))
 
-(define-language L5
-  (extends L4)
+(define-language L6
+  (extends L5)
   (Expr (e)
         (- (+ e1 e2)
            (= e1 e2)
@@ -77,8 +83,8 @@
            (x1 x2 x3)
            (if x1 x2 x3))))
 
-(define-language L6
-  (extends L5)
+(define-language L7
+  (extends L6)
   (Program (p)
            (- (program ([x (x1 x2) e*] ...)
                        e))
@@ -103,6 +109,8 @@
            `(if ,e1 ,e2 ,e3)]
           [`(when ,(app Expr e1) ,(app Expr e2))
            `(when ,e1 ,e2)]
+          [`(cond [,(app Expr e1) ,(app Expr e2)] ... [,(app Expr e3)])
+           `(cond [,e1 ,e2] ... [,e3])]
           [`(λ (,x) ,(app Expr e1))
            `(λ (,x) ,e1)]
           [`(,(app Expr e1) ,(app Expr e2))
@@ -115,14 +123,22 @@
         [(when ,[e1] ,[e2])
          `(if ,e1 ,e2 #f)]))
 
-(define-pass delay-if : L1 (e) -> L1 ()
+(define-pass desugar-cond : L1 (e) -> L2 ()
+  (Expr : Expr (e) -> Expr ()
+        [(cond [,[e1]])
+         e1]
+        [(cond [,[e1] ,[e1*]] [,e2 ,e2*]  ...  [,e3])
+         `(if ,e1  ,e1*  ,(with-output-language (L1 Expr)
+                            (Expr `(cond [,e2 ,e2*] ... [,e3]))))]))
+
+(define-pass delay-if : L2 (e) -> L2 ()
   (Expr : Expr (e) -> Expr ()
         [(if ,[e1] ,[e2] ,[e3])
          (define x2 (gensym 'trash))
          (define x3 (gensym 'trash))
          `((if ,e1 (λ (,x2) ,e2) (λ (,x3) ,e3)) #f)]))
 
-(define-pass identify-free-variables : L1 (e) -> L2 ()
+(define-pass identify-free-variables : L2 (e) -> L3 ()
   (Expr : Expr (e) -> Expr ('())
         [,x (values x (list x))]
         [(+ ,[e1 a1] ,[e2 a2])
@@ -144,7 +160,7 @@
   (let-values ([(res _) (Expr e)])
     res))
 
-(define-pass make-closures : L2 (e) -> L3 ()
+(define-pass make-closures : L3 (e) -> L4 ()
   (Expr : Expr (e [env #f] [fv '()]) -> Expr ()
         [(,[e1] ,[e2])
          (define clo-name (gensym 'clo))
@@ -165,7 +181,7 @@
          `(closure (,lambda-name (,x ,env-name) ,e*) (,(for/list ([i (in-list x*)])
                                                          (Expr i env fv)) ...))]))
 
-(define-pass raise-closures : L3 (e) -> L4 ()
+(define-pass raise-closures : L4 (e) -> L5 ()
   (definitions
     (define lamb-name '())
     (define lamb-arg  '())
@@ -182,7 +198,7 @@
     `(program ([,lamb-name (,lamb-arg ,lamb-env) ,lamb-body] ...)
               ,e*)))
 
-(define-pass simplify-calls : L4 (e) -> L5 ()
+(define-pass simplify-calls : L5 (e) -> L6 ()
   (Expr : Expr (e) -> Expr ()
         [(,[e1] ,[e2] ,[e3])
          (define x1 (gensym 'app))
@@ -213,7 +229,7 @@
               (let ([,x3 ,e3])
                 (if ,x1 ,x2 ,x3))))]))
 
-(define-pass raise-lets : L5 (e) -> L6 ()
+(define-pass raise-lets : L6 (e) -> L7 ()
   (Expr : Expr (e) -> Expr ())
   (Let-Expr : Expr (e [var #f] [next-expr #f]) -> Let-Expr ()
             [(let ([,x ,e])
@@ -316,7 +332,7 @@
   return a.b.v ? b : c;
  }})
 
-(define-pass generate-c : L6 (e) -> * ()
+(define-pass generate-c : L7 (e) -> * ()
  (definitions
     (define (c s)
       (list->string
@@ -406,20 +422,20 @@
            make-closures
            identify-free-variables
            delay-if
+           desugar-cond
            desugar-when
            parse))
 
 (module+ test
   (define x
-    (compile
+    (compiler
      #;`(((λ (x)
             (λ (x)
               x)) 1) 2)
      '(((λ (x)
           (λ (y)
-            (if (= 6 (+ x y))
-                x
-                y))) 4) 2)))
+            (cond [(= 6 (+ x y)) x]
+                  [y]))) 4) 2)))
   
   (displayln x)
   (with-output-to-file "temp.c"

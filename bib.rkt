@@ -30,3 +30,6 @@
    #:location (proceedings-location
                "Conference on Functional Programming Languages and Computer Architecture")
    #:url "http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.48.4346"))
+
+(define lexicalscope-link
+   "https://en.wikipedia.org/wiki/Scope_%28computer_science%29#Lexical_scoping")
