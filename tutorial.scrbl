@@ -22,6 +22,8 @@
 
 @section{Introduction}
 
+@section{Prologue: Installing Racket and Nanopass}
+
 @section{Defining the Source Language}
 
 As with other Racket based languages, the first line of a
@@ -57,7 +59,7 @@ In the above example, @racket[b] is anything that is a
    (and (integer? x)
         (<= (- (expt 2 63)) x (- (expt 2 63) 1))))]
 
-@; <=======================
+@; <============================
 In this compiler, @racket[Expr] is a non-terminal. It can be
 a combination of terminals and other non-terminals. These
 combinations are called production rules. Each production
@@ -71,7 +73,7 @@ arithmetic expression (@racket[(= e1 e2)],
 (@racket[(λ (x) e)]), and function application @;
 
 (@racket[(e1 e2)]).
-@; =======================>
+@; ============================>
 
 Every meta-variable in a production rule must be unique and
 have a name matching a terminal or non-terminal. Numbers
@@ -395,19 +397,84 @@ The following pass does the actual desugaring:
 
 This pass is similar to the @racket[desugar-when] pass
 before it, with two major differences. First, this pass uses
-ellipses to match on lists. Second, this pass uses 
+ellipses (@racket[...]) to match on lists. Second, this pass uses 
 @racket[with-output-language] to construct expressions in @racket[L1].
 
 @examples[
-  #:eval nano-eval
-  (with-output-language (L1 Expr)
+ #:eval nano-eval
+ (with-output-language (L1 Expr)
     (desugar-cond `(cond [(= 5 6) 7]
                          [(= 8 9) 10]
                          [42])))]
 
+@subsection{Complex patterns and pattern matching}
+
+Ellipses in patterns bind the variables before it to a list.
+In this case, both @racket[e2] and @racket[e2*] are bound to
+lists that match the relevant input expression given to the
+processor. The pattern causes them to look like they are
+zipped together, but they are distinct lists.
+
+The following code uses @racket[nanopass-case] to show that
+@racket[e2] and @racket[e2*] are different lists:
+
+@examples[
+ #:eval nano-eval
+ #:label #f
+ (define cond-example
+   (with-output-language (L1 Expr)
+     `(cond [(= 1 2) 3]
+            [(= 4 5) 6]
+            [(= 7 8) 9]
+            [10])))
+ (nanopass-case (L1 Expr) cond-example
+                [(cond [,e1 ,e1*] [,e2 ,e2*] ... [,e3])
+                 e2*])]
+
+First, we create a @racket[cond] expression and name it 
+@racket[cond-example]. We then use @racket[nanopass-case] to
+destruct that expression, returning only @racket[e2*].
+Notice that the result is a list. Returning @racket[e2]
+would have similar results. If, however, we returned 
+@racket[e1], @racket[e1*], or @racket[e3], the result would
+have been a single expression, rather than a list of
+expressions.
+
+Lists can also be used in templates wherever an ellipsis is
+allowed.
+
+@examples[
+ #:eval nano-eval
+ (nanopass-case (L1 Expr) cond-example
+                [(cond [,e1 ,e1*] ... [,e3])
+                 (with-output-language (L1 Expr)
+                   `(cond [,e1* ,e1] ... [,e3]))])]
+
+In this example we reverse the test and body of each of the
+expressions in the @racket[cond] expression. While this
+does change the semantics of what we would expect from a 
+@racket[cond], it is syntactically valid.
+
+Here, both @racket[e1] and @racket[e1*] are both lists of
+expressions. Even though they appear to be zipped by
+Nanopass, they are still  distinct lists.
+
+@subsection{Recursive templates}
+
 @subsection[#:tag "condscale"]{Notes on Scaling Up}
 
 First, combining with @racket[when].
+
+@racketblock[
+ (define-pass desugar-alt : Lsrc (e) -> L2 ()
+   (Expr : Expr (e) -> Expr ()
+         [(when ,[e1] ,[e2])
+          `(if ,e1 ,e2 #f)]
+         [(cond [,[e1]])
+          e1]
+         [(cond [,[e1] ,[e1*]] [,e2 ,e2*]  ...  [,e3])
+          `(if ,e1  ,e1*  ,(with-output-language (L1 Expr)
+                             (Expr `(cond [,e2 ,e2*] ... [,e3]))))]))]
 
 Next, part of a macro system.
 
