@@ -631,13 +631,14 @@ the transformation would look like:
  (code:comment "=>")
  (lambda (x env) .... (env-get env y) ....)]
 
-Unfortunately, this transformation is not enough to create a
-closure object. When a lambda occurs we need to also
+Unfortunately, this transformation is not enough to create
+a closure object. When a lambda occurs we need to also
 explicitly create the environment associated with it. Doing
 so allows the closure to bind to the variables as the
 lambda's definition, rather then whatever they happen to be
 at the call site. In other words, we want to preserve 
-@hyperlink[lexicalscope-link]{lexical scoping} in our target language.
+@hyperlink[lexicalscope-link]{lexical scoping} in our target
+language.
 
 Applying this idea to the transformation above gives the
 following transformation:
@@ -653,12 +654,25 @@ expression, which has now been given the name
 @racket[name]. The second argument is the variables that
 this closure's environment binds, in this case @racket[y].
 
-Now that TODO
+Now that functions take two arguments, we also need to
+modify all of the function call sites to also pass in the
+function's environment. This transformation is simple to do
+here because closure objects contain their environments.
+
+The following is the transformation that happens at each
+function's call site:
 
 @racketblock[
  (f x)
  (code:comment "=>")
  ((closure-func f) x (closure-env f))]
+
+In this example, @racket[closure-func] and 
+@racket[closure-env] are special syntax that retrieves the
+function and environment objects from a closure. A later
+pass transforms @racket[closure-func] to retrieve a function
+pointer. For now, however, the closure contains the literal
+function itself.
 
 We perform closure conversion in two passes. First, we
 create a pass to identify all free variables in each
@@ -672,9 +686,32 @@ to the top.
 
 @subsection{Free Variable Identification}
 
+The first step to closure conversion is to identify all of
+the free variables in every function. This transformation
+allows us to convert free variables into lookups in a later pass.
+
+The following language modifies functions to store free variables:
+
 @racketblock[#,L3-code]
 
+In this language @racket[FreeVars-Expr] is a new
+non-terminal that stores an expression and a list of
+variables. Function expressions now store an expression with
+free variables for their body. The main effect of this
+transformation is that functions now have constant time
+access to all of their free variables.
+
+@examples[
+ #:eval nano-eval
+ (with-output-language (L3 Expr)
+   `(λ (x) (free (y z) (+ x (+ y z)))))]
+
+The following pass does the actual transformation:
+
 @racketblock[#,identify-free-variables-code]
+
+Unlike the previous passes, this pass uses extra return
+values in its processors.
 
 @subsection{Explicit Closure Creation}
 
@@ -688,7 +725,9 @@ TODO:
 
 First, intermediate passes.
 
-Lambda Lifting@cite[lambdalifting].
+Second, data structure for linear time
+
+Third, Lambda Lifting@cite[lambdalifting].
 
 @section{Turning Closures to Function Pointers}
 

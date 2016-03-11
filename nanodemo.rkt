@@ -202,8 +202,9 @@
                  (for/list ([i (in-list x*)]
                             [j (in-range (length x*))])
                    (cons i j))))
-         `(closure (,lambda-name (,x ,env-name) ,e*) (,(for/list ([i (in-list x*)])
-                                                         (Expr i env fv)) ...))]))
+         `(closure (,lambda-name (,x ,env-name) ,e*)
+                   (,(for/list ([i (in-list x*)])
+                       (Expr i env fv)) ...))]))
 
 (define-pass raise-closures : L4 (e) -> L5 ()
   (definitions
