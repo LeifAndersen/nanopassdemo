@@ -461,9 +461,40 @@ Nanopass, they are still  distinct lists.
 
 @subsection{Recursive templates}
 
+Inside of a processor, @racket[quasiquote] is rebound to
+construct an expression in the output language. Normally,
+this is the correct behavior, but sometimes we want to
+construct an expression in a different language, as in the
+pass above.
+
+More specifically, the following is the code that rebinds 
+@racket[quasiquote]:
+
+@racketblock[
+ [(cond [,[e1] ,[e1*]] [,e2 ,e2*]  ...  [,e3])
+  `(if ,e1  ,e1*  ,(with-output-language (L1 Expr)
+                     (Expr `(cond [,e2 ,e2*] ... [,e3]))))]]
+
+In this expression, the outer @racket[quasiquote]
+constructs an expression in the output language for the
+pass. The inner @racket[quasiquote], however, is
+constructing an expression in @racket[L1], the input
+language for the pass. Finally, the @racket[Expr] is the
+name of the processor, and runs itself on the newly created
+expression.
+
 @subsection[#:tag "condscale"]{Notes on Scaling Up}
 
-First, combining with @racket[when].
+Many desugaring operations performed by the compiler are
+fairly simple. As such, it is often easier for programmers
+to implement them together in one pass. Merging these passes
+can help reduce the boilerplate code surrounding the pass,
+while not making the passes themselves any more
+complicated.
+
+The following is an alternate version of the desugar pass
+that combines both @racket[desugar-when] and 
+@racket[desugar-cond]:
 
 @racketblock[
  (define-pass desugar-alt : Lsrc (e) -> L2 ()
@@ -476,7 +507,23 @@ First, combining with @racket[when].
           `(if ,e1  ,e1*  ,(with-output-language (L1 Expr)
                              (Expr `(cond [,e2 ,e2*] ... [,e3]))))]))]
 
-Next, part of a macro system.
+This particular pass can be constructed simply by merging
+the two passes together. Doing this merging is
+straightforward for simple passes such as these.
+Unfortunately, this process gets significantly more
+complicated as passes themselves become more complicated.
+For this reason, many front end passes of a compiler will be
+merged like above. This so-called merging works because the
+passes themselves are simple, and separating them out
+
+The second approach to desugaring expressions is to do them
+in the language's macro system. This makes it easier for
+programmers to create there own macros that act as syntactic
+sugar.@note{Racket's @racket[when] and @racket[cond] forms
+ are desugared in Racket's
+ @tech[#:key "macro"
+       #:doc '(lib "scribblings/guide/macros.scrbl")]{
+  macro system}.}
 
 @section{Delaying @racket[if] Forms}
 
@@ -552,6 +599,8 @@ entirely eager expression.
 
 @subsection[#:tag "ifscale"]{Notes on Scaling up}
 
+TODO:
+
 First: Other means of delaying
 
 Second: Better generation of temporary variables.
@@ -604,7 +653,7 @@ expression, which has now been given the name
 @racket[name]. The second argument is the variables that
 this closure's environment binds, in this case @racket[y].
 
-Now that
+Now that TODO
 
 @racketblock[
  (f x)
@@ -634,6 +683,8 @@ to the top.
 @racketblock[#,make-closures-code]
 
 @subsection[#:tag "ccscale"]{Notes on Scaling Up}
+
+TODO:
 
 First, intermediate passes.
 
