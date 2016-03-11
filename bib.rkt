@@ -33,3 +33,7 @@
 
 (define lexicalscope-link
    "https://en.wikipedia.org/wiki/Scope_%28computer_science%29#Lexical_scoping")
+(define iumatch-link
+  "http://www.cs.indiana.edu/chezscheme/match/")
+(define plai-link
+  "https://cs.brown.edu/~sk/Publications/Books/ProgLangs/2007-04-26/")

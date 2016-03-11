@@ -80,6 +80,21 @@ changing its type. In the expression @racket[(+ e1 e2)]:
 @racket[+] is a tag and @racket[e1] and @racket[e2] are
 meta-variables that can contain expressions.
 
+The ellipsis (@racket[...]) in the @racket[cond] production
+rule indicates that the pattern before it is a list that can
+occur zero or more times. In this case, there can be
+multiple pairs of @racket[(,e1 ,e2)] pairs. Only one
+ellipsis is allowed for each level of parenthesis ( 
+@racket[()]) in a production rule.
+
+For example, the following is a valid pattern:
+
+@racketblock[(let ([x e] ...) e2 ...) (code:comment "A valid pattern")]
+
+However, the following is not a valid pattern:
+
+@racketblock[(let [x e] ... e2 ...) (code:comment "Not a valid pattern")]
+
 Finally, the @racket[entry] clause tells Nanopass which
 non-terminal is the top most non-terminal. This is 
 @racket[Expr] in this compiler.
@@ -120,6 +135,18 @@ unchanged.
  (with-output-language (Lsrc Expr)
    '(+ 1 2))]
 
+If a production has an ellipses (@racket[...]), then the
+pattern prior to it may occur zero ore more times.
+
+@examples[
+ #:eval nano-eval
+ (with-output-language (Lsrc Expr)
+   `(cond [(= 5 4) 3]
+          [(= 2 1) 0]
+          [42]))
+ (with-output-language (Lsrc Expr)
+   `(cond [84]))]
+
 @subsection[#:tag "deflangscale"]{Notes on Scaling Up}
 
 The source language used in this tutorial is clearly a
@@ -128,21 +155,21 @@ write simple compilers using Nanopass. There are a few
 design choices that make it non trivial (although still
 possible) to scale up to a production quality language.
 
-First, this source language is missing any form of mutation.
-This feature is lacking because handing it requires the
-compiler to reason about assigned variables, and requires
-the runtime to create mutable cells in a heap to store these
-boxes. Doing so additionally necessitates creating a garbage
-collector. We have omitted this as implementing this is
-straightforward, and adds little understanding to how to use
-the framework. Interested readers can read about how to
-implement the runtime for these cells in 
-@hyperlink["https://cs.brown.edu/~sk/Publications/Books/ProgLangs/2007-04-26/"]{
- Programming Languages: Application and Interpretation}
+First, this source language is missing any form of
+mutation. This feature is lacking because handing it
+requires the compiler to reason about assigned variables,
+and requires the runtime to create mutable cells in a heap
+to store these boxes. Doing so additionally necessitates
+creating a garbage collector. We have omitted this as
+implementing this is straightforward, and adds little
+understanding to how to use the framework. Interested
+readers can read about how to implement the runtime for
+these cells in @hyperlink[plai-link]{ Programming Languages:
+ Application and Interpretation}
 @cite[plai]. Additionally, techniques used in this tutorial
-can be used to detect assigned variables, making it possible
-to determine when a mutable cell must be used. @note{TODO:
- Source for faster assigned variable detection.}
+can be used to detect assigned variables, making it
+possible to determine when a mutable cell must be used. 
+@note{TODO: Source for faster assigned variable detection.}
 
 Second, in this compiler, primitives such as @racket[=] and
 @racket[+] are encoded directly in the language. While this
@@ -290,7 +317,7 @@ Bracket are for a feature of Nanopass called catamorphisms.
 @note{The term catamorphism comes from category theory.
  While related, catamorphisms in this setting are used
  slightly differently and are more closely related to the
- @hyperlink["http://www.cs.indiana.edu/chezscheme/match/"]{IU Pattern Matcher}
+ @hyperlink[iumatch-link]{IU Pattern Matcher}
  or @tt{app} forms in @racket[match].}
 
 These so-called catamorphisms further reduce boilerplate by
@@ -345,11 +372,44 @@ during its parsing pass.
 
 @section{Desugaring @racket[cond] and recursive passes}
 
+Sometimes a pass or a processor will recursively call
+itself with on new expressions. When this happens, we need
+to make sure that the new expression is in the input
+language for the pass. By default @racket[define-pass] binds
+@racket[quasiquote] to construct expressions in the output
+language for the pass. We use @racket[with-output-language]
+to rebind @racket[quasiquote] to the input language.
+
+The following is the language is the result of desugaring 
+@racket[cond]:
+
 @racketblock[#,L2-code]
+
+Similarly to how @racket[L1] removed @racket[when]
+expressions from @racket[L2], this language removes 
+@racket[cond] expressions from @racket[L1].
+
+The following pass does the actual desugaring:
 
 @racketblock[#,desugar-cond-code]
 
+This pass is similar to the @racket[desugar-when] pass
+before it, with two major differences. First, this pass uses
+ellipses to match on lists. Second, this pass uses 
+@racket[with-output-language] to construct expressions in @racket[L1].
+
+@examples[
+  #:eval nano-eval
+  (with-output-language (L1 Expr)
+    (desugar-cond `(cond [(= 5 6) 7]
+                         [(= 8 9) 10]
+                         [42])))]
+
 @subsection[#:tag "condscale"]{Notes on Scaling Up}
+
+First, combining with @racket[when].
+
+Next, part of a macro system.
 
 @section{Delaying @racket[if] Forms}
 
@@ -389,7 +449,7 @@ expressions to equivalent eager expressions:
 @racketblock[#,delay-if-code]
 
 Both the source and target languages for this pass are 
-@racket[L1]. It is possible to create a new language that
+@racket[L2]. It is possible to create a new language that
 statically enforces if expressions to store only functions.
 Doing so in this case does not prevent further
 optimizations, but does help programmers find bugs in their
@@ -734,6 +794,10 @@ Lambda Lifting@cite[lambdalifting].
 @subsection{Pattern Matching Languages}
 
 @subsection{Viewing Expanded Languages}
+
+@examples[
+ #:eval nano-eval
+ (language->s-expression L7)]
 
 @section{Bonus: Creating a #lang}
 
