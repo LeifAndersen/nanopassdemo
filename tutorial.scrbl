@@ -18,7 +18,9 @@
 @(define nano-eval (make-base-eval))
 @examples[#:eval nano-eval
           #:hidden
-          (require nanopass/base "nanodemo.rkt")]
+          (require racket/list
+                   nanopass/base
+                   "nanodemo.rkt")]
 
 @section{Introduction}
 
@@ -409,11 +411,15 @@ ellipses (@racket[...]) to match on lists. Second, this pass uses
 
 @subsection{Complex patterns and pattern matching}
 
-Ellipses in patterns bind the variables before it to a list.
-In this case, both @racket[e2] and @racket[e2*] are bound to
-lists that match the relevant input expression given to the
-processor. The pattern causes them to look like they are
-zipped together, but they are distinct lists.
+Ellipses in patterns bind the variables before it to a
+list.@note{Pattern variables can occur before an arbitrarily
+ deep level of ellipses. For example, if a pattern is two levels of
+ ellipses deep, it will be a list of lists. If the pattern
+ is three levels of ellipses deep it will be a list of list
+ of lists.} In this case, both @racket[e2] and @racket[e2*]
+are bound to lists that match the relevant input expression
+given to the processor. The pattern causes them to look like
+they are zipped together, but they are distinct lists.
 
 The following code uses @racket[nanopass-case] to show that
 @racket[e2] and @racket[e2*] are different lists:
@@ -451,13 +457,36 @@ allowed.
                    `(cond [,e1* ,e1] ... [,e3]))])]
 
 In this example we reverse the test and body of each of the
-expressions in the @racket[cond] expression. While this
-does change the semantics of what we would expect from a 
-@racket[cond], it is syntactically valid.
+expressions in the @racket[cond] expression. While this does
+change the semantics of what we would expect from a 
+@racket[cond], it is syntactically valid. Additionally, both
+@racket[e1] and @racket[e1*] are both lists of expressions.
+Even though they appear to be zipped by Nanopass, they are
+still distinct lists.
 
-Here, both @racket[e1] and @racket[e1*] are both lists of
-expressions. Even though they appear to be zipped by
-Nanopass, they are still  distinct lists.
+Note that because variables bound with ellipses in the
+pattern are just lists, a lot of common idioms in other
+pattern languages are not possible. This limitation becomes
+particularly obvious when trying to duplicate a single
+element to match the length of a list.
+
+@examples[
+ #:eval nano-eval
+ (eval:error
+  (nanopass-case (L1 Expr) cond-example
+                 [(cond [,e1 ,e1*] ... [,e3])
+                  (with-output-language (L1 Expr)
+                   `(cond [,e1 ,e3] ... [5]))]))
+ (nanopass-case (L1 Expr) cond-example
+                [(cond [,e1 ,e1*] ... [,e3])
+                 (with-output-language (L1 Expr)
+                   `(cond [,e1 ,(make-list (length e1) e3)] ... [5]))])]
+
+The first example causes an error because @racket[e1] is a
+list and @racket[e3] is a single expression. Using 
+@racket[make-list], however, to generate a list of 
+@racket[e3] expressions of the correct length however
+achieves the desired behavior.
 
 @subsection{Recursive templates}
 
