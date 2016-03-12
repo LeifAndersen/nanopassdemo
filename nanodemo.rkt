@@ -189,7 +189,9 @@
         [(,[e1] ,[e2])
          (define clo-name (gensym 'clo))
          `(let ([,clo-name ,e1])
-            ((closure-func ,clo-name) ,e2 (closure-env ,clo-name)))]
+            ((closure-func ,clo-name)
+             ,e2
+             (closure-env ,clo-name)))]
         [,x
          (if (dict-has-key? fv x)
              `(env-get ,env ,(dict-ref fv x))

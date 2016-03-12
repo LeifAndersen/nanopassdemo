@@ -211,6 +211,36 @@ little value on learning to use Nanopass.
 
 @section{A Simple Pass: Desugaring @racket[when] Forms}
 
+Conditional expressions (@racket[if], @racket[cond], 
+@racket[when]) in our language most directly map to ternary
+operator in C. While C's @tt{if} statements are more
+expressive, they can not be included in other expressions.
+
+For example, the following expression is valid in our
+language, but does not directly map to @tt{if} statements in
+C:
+
+@racketblock[(+ (if #t 5 6) 7) (code:comment "=> 13")]
+
+Unfortunately, ternary operators in C always expect two
+branched conditions. To compensate, we convert 
+@racket[when] expressions into equivalent @racket[if] ones.
+
+The transformation is:
+
+@racketblock[
+ (when <condition> <body>)
+ (code:comment "=>")
+ (if <condition> <body> #f)]
+
+Here, @racket[<body>] is evaluated only if 
+@racket[<condtion>] is true. Otherwise, the expression
+evaluates to @racket[#f].@note{In Racket, @racket[when]
+ expressions actually evaluate to @racket[void]. We evaluate
+ to @racket[#f] instead to make the compiler simpler.}
+
+@subsection{Extending Languages}
+
 Languages created with @racket[define-language] can be
 extensions of other languages. These so called extensions
 are indicated with the @racket[extends] keyword.
@@ -383,6 +413,31 @@ language for the pass. By default @racket[define-pass] binds
 @racket[quasiquote] to construct expressions in the output
 language for the pass. We use @racket[with-output-language]
 to rebind @racket[quasiquote] to the input language.
+
+This operations occurs when compiling @racket[cond]
+expressions. Like @racket[when], we need to desugar 
+@racket[cond] expressions into @racket[if] ones. Doing so
+allows us to directly compile them into ternary operators in
+C.
+
+The transformation that follows is:
+
+@racketblock[
+ (cond [<test-1> <body-1>]
+       [<test-2> <body-2>]
+       ....
+       [<test-n-1> <boduy-n-1>]
+       [<body-n>])
+ (code:comment "=>")
+ (if <test-1> <body-1>
+     (if <test-2> <body-2>
+         ....
+         (if <test-n-1> <body-n-1> <body-n>) .... ))]
+
+In this example, each branch of the @racket[cond] clause
+becomes a possible branch in an @racket[if] expression. The
+recursive nature of the target output causes a recursive
+solution to occur naturally.
 
 The following is the language is the result of desugaring 
 @racket[cond]:
@@ -586,6 +641,20 @@ the entire expression can be evaluated eagerly, and the
 functions themselves will give the condition body delayed
 semantics.
 
+The transformation will cause @racket[if] expressions to
+follow this form:
+
+@racketblock[
+ (if <cond> <body> <alt>)
+ (code:comment "=>")
+ ((if <cond> (λ (trash) <body>) (λ (trash) <alt>)) #f)]
+
+Here, both the body and alternate are functions that do not
+use their @racket[trash] argument. In order to force the
+evaluation of the selected clause, we apply the result to 
+@racket[#f]. This value gets mapped to @racket[trash], which
+is never used.
+
 The following pass transforms delayed @racket[if]
 expressions to equivalent eager expressions:
 
@@ -739,8 +808,16 @@ The following pass does the actual transformation:
 
 @racketblock[#,identify-free-variables-code]
 
+@; <====================
 Unlike the previous passes, this pass uses extra return
-values in its processors.
+values in its processors. This extra value stores a set 
+@note{Represented as a list} of free variables in the
+expression. By default, an expression contains no free
+variables. To accomplish this, we pass the empty list@;
+
+(@racket['()]) in as the default value for the extra return
+values.
+@; ====================>
 
 @subsection{Explicit Closure Creation}
 
