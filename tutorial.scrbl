@@ -810,10 +810,10 @@ The following pass does the actual transformation:
 
 @; <====================
 Unlike the previous passes, this pass uses extra return
-values in its processors. This extra value stores a set 
-@note{Represented as a list} of free variables in the
-expression. By default, an expression contains no free
-variables. To accomplish this, we pass the empty list@;
+values in its processors. This extra value stores a set of
+free variables represented as a list in the expression. By
+default, an expression contains no free variables. To
+accomplish this, we pass the empty list@;
 
 (@racket['()]) in as the default value for the extra return
 values. Nanopass uses this value inside of any generated
@@ -884,7 +884,28 @@ remain, the compiler throws an unbound variables error, and stops.
 
 @subsection{Explicit Closure Creation}
 
+The next step for closure conversion is to take the free
+variables we've just found, and use them to construct
+explicit closure objects. We create these so-called closure
+objects in the following language:
+
 @racketblock[#,L4-code]
+
+This language removes the free variable list because they
+are no longer needed. It additionally introduces 
+@racket[exact-nonnegative-integer]s to serve as offsets in a
+closure object. Also, this language introduces @racket[let]
+forms to bind expressions to values. And finally, this
+language introduces four syntactic forms for operating on
+closures:
+
+@itemlist[
+ @item{@racket[closure] - For building closure objects.}
+ @item{@racket[closure-env] - For retrieving the
+  environment portion of a closure.}
+ @item{@racket[closure-func] - For retrieving the function
+  portion of a closure.}
+ @item{@racket[env-get] - For retrieving a specific variable in an environment.}]
 
 @racketblock[#,make-closures-code]
 
@@ -906,18 +927,24 @@ Fourth, Lambda Lifting@cite[lambdalifting].
 
 @racketblock[#,raise-closures-code]
 
+@subsection[#:tag "clotofuncscale"]{Notes on Scaling Up}
+
 @section{Converting Expressions into Statements}
 
-@racketblock[
- #,L6-code
+@subsection{Simplifying function application}
 
- #,L7-code]
+@racketblock[#,L6-code]
 
-@racketblock[
- #,simplify-calls-code
+@racketblock[#,simplify-calls-code]
 
- #,raise-lets-code]
- 
+@subsection{Linearizing Code}
+
+@racketblock[#,L7-code]
+
+@racketblock[#,raise-lets-code]
+
+@subsection[#:tag "simplifyscale"]{Notes on Scaling Up}
+
 @section{The Runtime}
 
 @codeblock[#:keep-lang-line? #f]|{#lang at-exp nanopass
