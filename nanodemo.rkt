@@ -181,7 +181,9 @@
         [(,[e1 a1] ,[e2 a2])
          (values `(,e1 ,e2)
                  (set-union a1 a2))])
-  (let-values ([(res _) (Expr e)])
+  (let-values ([(res free) (Expr e)])
+    (unless (set-empty? free)
+      (error 'compiler "Unbound variables: ~a" free))
     res))
 
 (define-pass make-closures : L3 (e) -> L4 ()

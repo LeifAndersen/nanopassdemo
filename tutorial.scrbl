@@ -816,8 +816,71 @@ expression. By default, an expression contains no free
 variables. To accomplish this, we pass the empty list@;
 
 (@racket['()]) in as the default value for the extra return
-values.
+values. Nanopass uses this value inside of any generated
+parts of the processor.@note{The default value can contain
+ free variables. When it does, those free variables serve as
+ an indicator that the default return value is never used.} Every clause
+in the @racket[Expr] processor uses @racket[values] to
+return two values.
 @; ====================>
+
+The base case for this clause is:
+
+@racketblock[[,x (values x (list x))]]
+
+This case matches on a variable literals. These
+variables remain unchained in this pass. However, they are
+added to a list of free variables in the expression.
+Function expressions then use this list to store free
+variables:
+
+@racketblock[
+ [(λ (,x) ,[e1 a1])
+  (define a* (set-remove a1 x))
+  (values `(λ (,x) (free (,a* ...) ,e1))
+          a*)]]
+
+The set @racket[a*] removes the variable bound by the
+function from the set of free variables. It then uses those
+free variables in the @racket[free] expression. Finally, it
+also passes this modified set for use in additional
+expressions. Note that @racket[(,a* ...)] indicates both
+that @racket[a*] is a list, and should be placed in the list
+portion of the @racket[free] expression.
+
+The remaining cases combine all of the free variables into a
+common set. For example, the free variables in the
+expression @racket[(+ ,e1 ,e2)], is the union between all of
+the free variables in @racket[e1] and the free variables in
+@racket[e2]. We need to explicitly create these cases
+because Nanopass is not clever enough to generate these
+clauses.
+
+In addition to using extra return values in its processors,
+this function also has a body:
+
+@racketblock[
+  (let-values ([(res free) (Expr e)])
+    (unless (set-empty? free)
+      (error 'compiler "Unbound variables: ~a" free))
+    res)]
+
+This body is needed because processors in this pass return
+two values, while the pass itself returns only one. This
+body additionally checks if any free variables have not been
+accounted for by any functions. When free variables do
+remain, the compiler throws an unbound variables error, and stops.
+
+@examples[
+ #:eval nano-eval
+ (with-output-language (L2 Expr)
+   (identify-free-variables
+    `(λ (x)
+       (λ (y) (+ x y)))))
+ (eval:error
+  (with-output-language (L2 Expr)
+    (identify-free-variables
+     `(λ (x) y))))]
 
 @subsection{Explicit Closure Creation}
 
@@ -829,11 +892,13 @@ values.
 
 TODO:
 
-First, intermediate passes.
+First, free variable checking at top level
 
-Second, data structure for linear time
+Second, intermediate passes.
 
-Third, Lambda Lifting@cite[lambdalifting].
+Third, data structure for linear time
+
+Fourth, Lambda Lifting@cite[lambdalifting].
 
 @section{Turning Closures to Function Pointers}
 
