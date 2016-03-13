@@ -350,14 +350,26 @@
  }
  
  Racket_Object  __prim_plus(Racket_Object a, Racket_Object b) {
+  if(a.t != INT || b.t != INT) {
+   printf("+: Expected Integer\n");
+   exit(1);
+  }
   return __make_int(a.i.v + b.i.v);
  }
  
  Racket_Object __prim_equal(Racket_Object a, Racket_Object b) {
+  if(a.t != INT || b.t != INT) {
+   printf("=: Expected Integer\n");
+   exit(1);
+  }
   return __make_bool(a.i.v == b.i.v);
  }
  
  Racket_Object __prim_if(Racket_Object a, Racket_Object b, Racket_Object c) {
+  if(a.t != BOOL) {
+   printf("if: Expected Bool\n");
+   exit(1);
+  }
   return a.b.v ? b : c;
  }})
 

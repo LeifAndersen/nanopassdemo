@@ -901,13 +901,26 @@ closures:
 
 @itemlist[
  @item{@racket[closure] - For building closure objects.}
- @item{@racket[closure-env] - For retrieving the
-  environment portion of a closure.}
+ @item{@racket[closure-env] - For retrieving the environment
+  portion of a closure.}
  @item{@racket[closure-func] - For retrieving the function
   portion of a closure.}
- @item{@racket[env-get] - For retrieving a specific variable in an environment.}]
+ @item{@racket[env-get] - For retrieving a specific variable
+  in an environment.}]
 
 @racketblock[#,make-closures-code]
+
+@examples[
+ #:eval nano-eval
+ (with-output-language (L3 Expr)
+   (make-closures `(λ (x) (free () x))))
+ (with-output-language (L3 Expr)
+   (make-closures `(λ (x) (free () (λ (y) (free (x) x))))))
+ (with-output-language (L3 Expr)
+   (make-closures `((λ (x) (free () x)) 42)))
+ (with-output-language (L3 Expr)
+   (make-closures `(((λ (x) (free ()(λ (y) (free (x) (+ x y)))))
+                     2) 3)))]
 
 @subsection[#:tag "ccscale"]{Notes on Scaling Up}
 
@@ -1023,16 +1036,28 @@ Fourth, Lambda Lifting@cite[lambdalifting].
   }
   
   Racket_Object  __prim_plus(Racket_Object a, Racket_Object b) {
+   if(a.t != INT || b.t != INT) {
+    printf("+: Expected Integer\n");
+    exit(1);
+   }
    return __make_int(a.i.v + b.i.v);
   }
   
   Racket_Object __prim_equal(Racket_Object a, Racket_Object b) {
+   if(a.t != INT || b.t != INT) {
+    printf("=: Expected Integer\n");
+    exit(1);
+   }
    return __make_bool(a.i.v == b.i.v);
   }
   
   Racket_Object __prim_if(Racket_Object a,
             Racket_Object b,
             Racket_Object c) {
+   if(a.t != BOOL) {
+    printf("if: Expected Bool\n");
+    exit(1);
+   }
    return a.b.v ? b : c;
    }})}|
 
