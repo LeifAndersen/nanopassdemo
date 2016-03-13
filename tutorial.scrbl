@@ -254,6 +254,16 @@ and the @racket[-] form removes production rules. These
 forms can also be used inside of a @racket[terminals] form.
 In this case, it adds and remove terminals.
 
+We can use @racket[language->s-expresion] to see the full
+language. This form is especially useful when a language is
+formed by many extended languages.
+
+@examples[
+ #:eval nano-eval
+ (language->s-expression L7)]
+
+@subsection{Passes and Processors}
+
 Nanopass uses @racket[define-pass] to create new passes.
 Unlike languages, passes are functions that transforms
 expressions from one language to another. The following pass
@@ -1168,16 +1178,6 @@ Fourth, Lambda Lifting@cite[lambdalifting].
             parse))]
 
 @section{Further Reading}
-
-@section{Epilogue: Other useful Nanopass Constructs}
-
-@subsection{Pattern Matching Languages}
-
-@subsection{Viewing Expanded Languages}
-
-@examples[
- #:eval nano-eval
- (language->s-expression L7)]
 
 @section{Bonus: Creating a #lang}
 

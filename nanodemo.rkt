@@ -18,7 +18,7 @@
      #`(begin
          (define name-code (quote-syntax #,stx))
          (nanopass:define-language name . rest))]))
-(define-syntax(define-pass stx)
+(define-syntax (define-pass stx)
   (syntax-parse stx
     [(define-pass name . rest)
      #:with name-code (format-id stx "~a-code" #'name)
